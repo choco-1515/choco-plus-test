@@ -27,7 +27,7 @@
 <div class="search-options">
     <div class="proxy-selector">
         サムネイル:
-        <select id="proxy-select" onchange="setProxyAndReload(this.value)">
+        <select id="proxy-select" onchange="setCookieAndReload('proxy_type', this.value)">
             <option value="self-hosted" {{ 'selected' if proxy_type == 'self-hosted' }}>自サーバー</option>
             <option value="img.youtube.com" {{ 'selected' if proxy_type == 'img.youtube.com' }}>img.youtube.com</option>
             <option value="i.ytimg.com" {{ 'selected' if proxy_type == 'i.ytimg.com' }}>i.ytimg.com</option>
@@ -35,9 +35,9 @@
     </div>
 </div>
 <script>
-function setProxyAndReload(value) {
-    document.cookie = 'proxy_type=' + value + '; max-age=2592000';
-    window.location.href = '/search?q={{ query }}&mode={{ mode }}';
+function setCookieAndReload(key, value) {
+    document.cookie = key + '=' + value + '; max-age=2592000';
+    window.location.href = '/search?q={{ query }}';
 }
 </script>
 
