@@ -149,43 +149,31 @@ def search():
     page = request.args.get('page', 1, type=int)
     token = request.args.get('token', None)
     proxy_type = request.cookies.get('proxy_type', 'self-hosted')
+    search_type = request.cookies.get('search_type', 'video')
     
     if not query:
-        response = make_response(render_template('search.html', results=[], query="", proxy_type=proxy_type, mode=mode))
+        response = make_response(render_template('search.html', results=[], query="", proxy_type=proxy_type, mode=mode, search_type=search_type))
         response.set_cookie('proxy_type', proxy_type, max_age=2592000)
         response.set_cookie('search_mode', mode, max_age=2592000)
+        response.set_cookie('search_type', search_type, max_age=2592000)
         return response
     
-    channels = None
-    videos = None
+    results = None
     next_page = None
     
     if mode == 'inv_first':
-        channels, _ = search_invidious(query, page, proxy_type, 'channel')
-        if not channels:
-            channels, _ = search_youtube(query, token, proxy_type, 'channel')
-        
-        videos, next_page = search_invidious(query, page, proxy_type, 'video')
-        if not videos:
-            videos, next_page = search_youtube(query, token, proxy_type, 'video')
+        results, next_page = search_invidious(query, page, proxy_type, search_type)
+        if not results:
+            results, next_page = search_youtube(query, token, proxy_type, search_type)
     else:
-        channels, _ = search_youtube(query, token, proxy_type, 'channel')
-        if not channels:
-            channels, _ = search_invidious(query, page, proxy_type, 'channel')
-        
-        videos, next_page = search_youtube(query, token, proxy_type, 'video')
-        if not videos:
-            videos, next_page = search_invidious(query, page, proxy_type, 'video')
+        results, next_page = search_youtube(query, token, proxy_type, search_type)
+        if not results:
+            results, next_page = search_invidious(query, page, proxy_type, search_type)
     
-    combined_results = []
-    if channels:
-        combined_results.extend(channels)
-    if videos:
-        combined_results.extend(videos)
-    
-    response = make_response(render_template('search.html', results=combined_results if combined_results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type))
+    response = make_response(render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type, search_type=search_type))
     response.set_cookie('proxy_type', proxy_type, max_age=2592000)
     response.set_cookie('search_mode', mode, max_age=2592000)
+    response.set_cookie('search_type', search_type, max_age=2592000)
     return response
 
 def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
@@ -245,9 +233,9 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
 
 @app.route('/trend')
 def trend():
-    region = request.args.get('region', 'JP')
-    proxy_type = request.args.get('proxy', request.cookies.get('proxy_type', 'self-hosted'))
-    jp_category = request.args.get('jp_category', 'all')  # 日本トレンドカテゴリ（全て・ゲーム・音楽）
+    region = request.cookies.get('trend_region', 'JP')
+    proxy_type = request.cookies.get('proxy_type', 'self-hosted')
+    jp_category = request.cookies.get('trend_category', 'all')
     results = []
     
     if region == 'JP':
@@ -275,6 +263,8 @@ def trend():
     
     flask_response = make_response(render_template('trend.html', results=results, region=region, proxy_type=proxy_type, jp_category=jp_category))
     flask_response.set_cookie('proxy_type', proxy_type, max_age=2592000)
+    flask_response.set_cookie('trend_region', region, max_age=2592000)
+    flask_response.set_cookie('trend_category', jp_category, max_age=2592000)
     return flask_response
 
 @app.route('/api/thumbnail/<video_id>')
