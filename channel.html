@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}{{ channel_name }} - Choco-Tube-Plus{% endblock %}
+
+{% block extra_head %}
+<style>
+    .channel-header {
+        background: linear-gradient(180deg, #2a2a2a 0%, #1e1e1e 100%);
+        padding: 30px 20px;
+        margin-bottom: 30px;
+        border-bottom: 1px solid #333;
+    }
+    .channel-info {
+        max-width: 1400px;
+        margin: 0 auto;
+        display: flex;
+        align-items: flex-start;
+        gap: 20px;
+    }
+    .channel-avatar {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background: #444;
+        flex-shrink: 0;
+        overflow: hidden;
+    }
+    .channel-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .channel-details {
+        flex: 1;
+    }
+    .channel-details h1 {
+        margin: 0 0 10px 0;
+        font-size: 2rem;
+        color: #fff;
+    }
+    .channel-stats {
+        display: flex;
+        gap: 30px;
+        font-size: 0.95rem;
+        color: #aaa;
+        margin-top: 10px;
+    }
+    .stat-item {
+        display: flex;
+        flex-direction: column;
+    }
+    .stat-value {
+        font-size: 1.2rem;
+        color: #fff;
+        font-weight: bold;
+    }
+    .channel-description {
+        color: #ccc;
+        line-height: 1.5;
+        margin-top: 10px;
+        max-width: 600px;
+    }
+    .videos-section {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 0 20px;
+    }
+    .videos-section h2 {
+        margin: 0 0 20px 0;
+        color: #fff;
+        font-size: 1.3rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="channel-header">
+    <div class="channel-info">
+        {% if channel_image %}
+        <div class="channel-avatar">
+            <img src="{{ channel_image }}" alt="{{ channel_name }}">
+        </div>
+        {% endif %}
+        <div class="channel-details">
+            <h1>{{ channel_name }}</h1>
+            <div class="channel-stats">
+                {% if subscriber_count %}
+                <div class="stat-item">
+                    <span>チャンネル登録者数</span>
+                    <span class="stat-value">{{ subscriber_count }}</span>
+                </div>
+                {% endif %}
+                {% if video_count %}
+                <div class="stat-item">
+                    <span>動画数</span>
+                    <span class="stat-value">{{ video_count }}</span>
+                </div>
+                {% endif %}
+                {% if view_count %}
+                <div class="stat-item">
+                    <span>再生数</span>
+                    <span class="stat-value">{{ view_count }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% if description %}
+            <div class="channel-description">{{ description }}</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="videos-section">
+    <h2>最新動画</h2>
+    <div class="video-grid">
+        {% if videos %}
+            {% for video in videos %}
+            <a href="/watch/{{ video.id }}" class="video-card">
+                <div class="thumbnail-container">
+                    <img src="{{ video.thumbnail }}" alt="{{ video.title }}" loading="lazy">
+                </div>
+                <div class="video-info">
+                    <h3>{{ video.title }}</h3>
+                </div>
+            </a>
+            {% endfor %}
+        {% else %}
+            <p style="color: #aaa; grid-column: 1/-1;">動画が見つかりません</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
