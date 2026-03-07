@@ -1,9 +1,10 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, make_response
 import requests
 import random
 import os
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'choco-tube-dev-key')
 
 YOUTUBE_API_KEYS = [
     "AIzaSyBQ-40ld7erVfx7s6iKBYl-GjDqJVYBwrc",
@@ -102,18 +103,31 @@ def search_invidious(query, page=1, proxy_type="img.youtube.com"):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # Get preferences from cookies or set defaults
+    proxy_type = request.cookies.get('proxy_type', 'self-hosted')
+    search_mode = request.cookies.get('search_mode', 'inv_first')
+    
+    response = make_response(render_template('index.html', proxy_type=proxy_type, search_mode=search_mode))
+    
+    # Set default cookies
+    response.set_cookie('proxy_type', proxy_type, max_age=2592000)  # 30 days
+    response.set_cookie('search_mode', search_mode, max_age=2592000)  # 30 days
+    
+    return response
 
 @app.route('/search')
 def search():
     query = request.args.get('q', '')
-    mode = request.args.get('mode', 'inv_first')
+    mode = request.args.get('mode', request.cookies.get('search_mode', 'inv_first'))
     page = request.args.get('page', 1, type=int)
     token = request.args.get('token', None)
-    proxy_type = request.args.get('proxy', 'img.youtube.com')
+    proxy_type = request.args.get('proxy', request.cookies.get('proxy_type', 'self-hosted'))
     
     if not query:
-        return render_template('search.html', results=[], query="", proxy_type=proxy_type)
+        response = make_response(render_template('search.html', results=[], query="", proxy_type=proxy_type, mode=mode))
+        response.set_cookie('proxy_type', proxy_type, max_age=2592000)
+        response.set_cookie('search_mode', mode, max_age=2592000)
+        return response
     
     results = None
     next_page = None
@@ -126,13 +140,16 @@ def search():
         results, next_page = search_youtube(query, token, proxy_type)
         if not results:
             results, next_page = search_invidious(query, page, proxy_type)
-        
-    return render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type)
+    
+    response = make_response(render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type))
+    response.set_cookie('proxy_type', proxy_type, max_age=2592000)
+    response.set_cookie('search_mode', mode, max_age=2592000)
+    return response
 
 @app.route('/trend')
 def trend():
     region = request.args.get('region', 'JP')
-    proxy_type = request.args.get('proxy', 'img.youtube.com')
+    proxy_type = request.args.get('proxy', request.cookies.get('proxy_type', 'self-hosted'))
     results = []
     
     if region == 'JP':
@@ -175,8 +192,10 @@ def trend():
                     break
             except:
                 continue
-                
-    return render_template('trend.html', results=results, region=region, proxy_type=proxy_type)
+    
+    flask_response = make_response(render_template('trend.html', results=results, region=region, proxy_type=proxy_type))
+    flask_response.set_cookie('proxy_type', proxy_type, max_age=2592000)
+    return flask_response
 
 @app.route('/api/thumbnail/<video_id>')
 def proxy_thumbnail(video_id):
