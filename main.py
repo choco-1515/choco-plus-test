@@ -67,6 +67,7 @@ def search_youtube(query, page_token=None, proxy_type="img.youtube.com", search_
             if response.status_code == 200:
                 data = response.json()
                 results = []
+                video_ids = []
                 for item in data.get('items', []):
                     if search_type == "channel":
                         results.append({
@@ -78,14 +79,38 @@ def search_youtube(query, page_token=None, proxy_type="img.youtube.com", search_
                         })
                     else:
                         v_id = item['id']['videoId']
+                        video_ids.append(v_id)
                         results.append({
                             'id': v_id,
                             'title': item['snippet']['title'],
                             'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                             'channel': item['snippet']['channelTitle'],
                             'channel_id': item['snippet']['channelId'],
-                            'type': 'video'
+                            'type': 'video',
+                            'views': 'N/A',
+                            'published_at': item['snippet']['publishedAt']
                         })
+                
+                # Fetch video statistics to get view count
+                if video_ids and search_type == "video":
+                    try:
+                        stats_url = f"https://www.googleapis.com/youtube/v3/videos?part=statistics&id={','.join(video_ids)}&key={key}"
+                        stats_response = requests.get(stats_url, timeout=5)
+                        if stats_response.status_code == 200:
+                            stats_data = stats_response.json()
+                            stats_map = {item['id']: item['statistics'].get('viewCount', '0') for item in stats_data.get('items', [])}
+                            for result in results:
+                                if result['type'] == 'video':
+                                    view_count = int(stats_map.get(result['id'], 0))
+                                    if view_count >= 1000000:
+                                        result['views'] = f"{view_count/1000000:.1f}M"
+                                    elif view_count >= 1000:
+                                        result['views'] = f"{view_count/1000:.1f}K"
+                                    else:
+                                        result['views'] = str(view_count)
+                    except Exception as e:
+                        print(f"Error fetching video stats: {e}")
+                
                 return results, data.get('nextPageToken')
         except Exception as e:
             print(f"YouTube API error with key {key[:10]}...: {e}")
@@ -114,12 +139,23 @@ def search_invidious(query, page=1, proxy_type="img.youtube.com", search_type="v
                         })
                     else:
                         v_id = item['videoId']
+                        published_at = item.get('publishedText', '')
+                        view_count = item.get('viewCount', 0)
+                        if view_count >= 1000000:
+                            views = f"{view_count/1000000:.1f}M"
+                        elif view_count >= 1000:
+                            views = f"{view_count/1000:.1f}K"
+                        else:
+                            views = str(view_count)
                         results.append({
                             'id': v_id,
                             'title': item['title'],
                             'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                             'channel': item['author'],
-                            'type': 'video'
+                            'channel_id': item.get('authorId', ''),
+                            'type': 'video',
+                            'views': views,
+                            'published_at': published_at
                         })
                 return results, page + 1
         except Exception as e:
@@ -289,8 +325,10 @@ def channel(channel_id):
     proxy_type = request.cookies.get('proxy_type', 'self-hosted')
     
     channel_data = None
+    channel_source = None
     videos = []
     
+    # Try YouTube API first
     for key in YOUTUBE_API_KEYS:
         try:
             url = f"https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id={channel_id}&key={key}"
@@ -299,11 +337,13 @@ def channel(channel_id):
                 data = response.json()
                 if data.get('items'):
                     channel_data = data['items'][0]
+                    channel_source = 'youtube'
                     break
         except Exception as e:
             print(f"Error fetching channel info: {e}")
             continue
     
+    # Fallback to Invidious if YouTube API fails
     if not channel_data:
         instances = INVIDIOUS_INSTANCES.copy()
         random.shuffle(instances)
@@ -313,10 +353,13 @@ def channel(channel_id):
                 response = requests.get(url, timeout=5)
                 if response.status_code == 200:
                     channel_data = response.json()
+                    channel_source = 'invidious'
                     break
-            except:
+            except Exception as e:
+                print(f"Invidious channel error: {e}")
                 continue
     
+    # Fetch videos
     for key in YOUTUBE_API_KEYS:
         try:
             url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={channel_id}&type=video&maxResults=20&key={key}"
@@ -335,6 +378,29 @@ def channel(channel_id):
             print(f"Error fetching channel videos: {e}")
             continue
     
+    # If YouTube API videos fetch failed, try Invidious
+    if not videos and channel_source:
+        instances = INVIDIOUS_INSTANCES.copy()
+        random.shuffle(instances)
+        for instance in instances:
+            try:
+                url = f"{instance}/api/v1/channels/{channel_id}/latest"
+                response = requests.get(url, timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data:
+                        v_id = item.get('videoId')
+                        if v_id:
+                            videos.append({
+                                'id': v_id,
+                                'title': item.get('title', 'Unknown'),
+                                'thumbnail': get_proxy_thumbnail(v_id, proxy_type)
+                            })
+                    break
+            except Exception as e:
+                print(f"Invidious videos error: {e}")
+                continue
+    
     channel_name = "Unknown"
     subscriber_count = None
     video_count = None
@@ -343,35 +409,62 @@ def channel(channel_id):
     channel_image = None
     
     if channel_data:
-        if 'snippet' in channel_data:
-            channel_name = channel_data['snippet'].get('title', 'Unknown')
-            description = channel_data['snippet'].get('description', '')
-            thumbnails = channel_data['snippet'].get('thumbnails', {})
-            if thumbnails:
-                channel_image = thumbnails.get('high', {}).get('url') or thumbnails.get('default', {}).get('url')
-        
-        if 'statistics' in channel_data:
-            sub_count = channel_data['statistics'].get('subscriberCount')
-            if sub_count:
-                if int(sub_count) >= 1000000:
-                    subscriber_count = f"{int(sub_count)/1000000:.1f}M"
-                elif int(sub_count) >= 1000:
-                    subscriber_count = f"{int(sub_count)/1000:.1f}K"
-                else:
-                    subscriber_count = sub_count
+        try:
+            if channel_source == 'youtube':
+                if 'snippet' in channel_data:
+                    channel_name = channel_data['snippet'].get('title', 'Unknown')
+                    description = channel_data['snippet'].get('description', '')
+                    thumbnails = channel_data['snippet'].get('thumbnails', {})
+                    if thumbnails:
+                        channel_image = thumbnails.get('high', {}).get('url') or thumbnails.get('default', {}).get('url')
+                
+                if 'statistics' in channel_data:
+                    sub_count = channel_data['statistics'].get('subscriberCount')
+                    if sub_count:
+                        sub_val = int(sub_count)
+                        if sub_val >= 1000000:
+                            subscriber_count = f"{sub_val/1000000:.1f}M"
+                        elif sub_val >= 1000:
+                            subscriber_count = f"{sub_val/1000:.1f}K"
+                        else:
+                            subscriber_count = str(sub_val)
+                    
+                    vid_count = channel_data['statistics'].get('videoCount')
+                    if vid_count:
+                        video_count = f"{int(vid_count):,}"
+                    
+                    view = channel_data['statistics'].get('viewCount')
+                    if view:
+                        view_val = int(view)
+                        if view_val >= 1000000000:
+                            view_count = f"{view_val/1000000000:.1f}B"
+                        elif view_val >= 1000000:
+                            view_count = f"{view_val/1000000:.1f}M"
+                        else:
+                            view_count = str(view_val)
             
-            vid_count = channel_data['statistics'].get('videoCount')
-            if vid_count:
-                video_count = f"{int(vid_count):,}"
-            
-            view = channel_data['statistics'].get('viewCount')
-            if view:
-                if int(view) >= 1000000000:
-                    view_count = f"{int(view)/1000000000:.1f}B"
-                elif int(view) >= 1000000:
-                    view_count = f"{int(view)/1000000:.1f}M"
-                else:
-                    view_count = view
+            elif channel_source == 'invidious':
+                channel_name = channel_data.get('author', 'Unknown')
+                description = channel_data.get('description', '')
+                thumbnails = channel_data.get('authorThumbnails', [])
+                if thumbnails:
+                    channel_image = thumbnails[0].get('url')
+                
+                sub_count = channel_data.get('subCount')
+                if sub_count:
+                    sub_val = int(sub_count)
+                    if sub_val >= 1000000:
+                        subscriber_count = f"{sub_val/1000000:.1f}M"
+                    elif sub_val >= 1000:
+                        subscriber_count = f"{sub_val/1000:.1f}K"
+                    else:
+                        subscriber_count = str(sub_val)
+                
+                vid_count = channel_data.get('videoCount')
+                if vid_count:
+                    video_count = f"{int(vid_count):,}"
+        except Exception as e:
+            print(f"Error parsing channel data: {e}")
     
     return render_template('channel.html', 
                           channel_name=channel_name,
