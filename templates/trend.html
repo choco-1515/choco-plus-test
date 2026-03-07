@@ -68,17 +68,17 @@
 {% block content %}
 <div class="trend-header">
     <div class="region-selector">
-        <a href="/trend?region=JP&proxy={{ proxy_type }}&jp_category={{ jp_category if jp_category else 'all' }}" class="{{ 'active' if region == 'JP' }}">日本</a>
-        <a href="/trend?region=US&proxy={{ proxy_type }}" class="{{ 'active' if region == 'US' }}">アメリカ</a>
-        <a href="/trend?region=GB&proxy={{ proxy_type }}" class="{{ 'active' if region == 'GB' }}">イギリス</a>
-        <a href="/trend?region=KR&proxy={{ proxy_type }}" class="{{ 'active' if region == 'KR' }}">韓国</a>
-        <a href="/trend?region=DE&proxy={{ proxy_type }}" class="{{ 'active' if region == 'DE' }}">ドイツ</a>
-        <a href="/trend?region=FR&proxy={{ proxy_type }}" class="{{ 'active' if region == 'FR' }}">フランス</a>
+        <a onclick="setTrendCookie('region', 'JP'); location.href='/trend'" class="{{ 'active' if region == 'JP' }}">日本</a>
+        <a onclick="setTrendCookie('region', 'US'); location.href='/trend'" class="{{ 'active' if region == 'US' }}">アメリカ</a>
+        <a onclick="setTrendCookie('region', 'GB'); location.href='/trend'" class="{{ 'active' if region == 'GB' }}">イギリス</a>
+        <a onclick="setTrendCookie('region', 'KR'); location.href='/trend'" class="{{ 'active' if region == 'KR' }}">韓国</a>
+        <a onclick="setTrendCookie('region', 'DE'); location.href='/trend'" class="{{ 'active' if region == 'DE' }}">ドイツ</a>
+        <a onclick="setTrendCookie('region', 'FR'); location.href='/trend'" class="{{ 'active' if region == 'FR' }}">フランス</a>
     </div>
     
     <div class="proxy-selector">
         サムネイル:
-        <select onchange="window.location.href='/trend?region={{ region }}&proxy=' + this.value{% if region == 'JP' %}&jp_category={{ jp_category if jp_category else 'all' }}{% endif %}">
+        <select onchange="document.cookie = 'proxy_type=' + this.value + '; max-age=2592000; path=/'; location.href='/trend'">
             <option value="img.youtube.com" {{ 'selected' if proxy_type == 'img.youtube.com' }}>img.youtube.com</option>
             <option value="i.ytimg.com" {{ 'selected' if proxy_type == 'i.ytimg.com' }}>i.ytimg.com</option>
             <option value="self-hosted" {{ 'selected' if proxy_type == 'self-hosted' }}>自サーバー (Self-hosted)</option>
@@ -86,12 +86,18 @@
     </div>
 </div>
 
+<script>
+function setTrendCookie(name, value) {
+    document.cookie = 'trend_' + name + '=' + value + '; max-age=2592000; path=/';
+}
+</script>
+
 {% if region == 'JP' %}
 <div class="jp-category-selector">
     <strong style="color: #fff; display: flex; align-items: center; margin-right: 10px;">カテゴリ:</strong>
-    <a href="/trend?region=JP&proxy={{ proxy_type }}&jp_category=all" class="{{ 'active' if jp_category == 'all' or not jp_category }}">全て</a>
-    <a href="/trend?region=JP&proxy={{ proxy_type }}&jp_category=game" class="{{ 'active' if jp_category == 'game' }}">ゲーム</a>
-    <a href="/trend?region=JP&proxy={{ proxy_type }}&jp_category=music" class="{{ 'active' if jp_category == 'music' }}">音楽</a>
+    <a onclick="setTrendCookie('category', 'all'); location.href='/trend'" class="{{ 'active' if jp_category == 'all' or not jp_category }}">全て</a>
+    <a onclick="setTrendCookie('category', 'game'); location.href='/trend'" class="{{ 'active' if jp_category == 'game' }}">ゲーム</a>
+    <a onclick="setTrendCookie('category', 'music'); location.href='/trend'" class="{{ 'active' if jp_category == 'music' }}">音楽</a>
 </div>
 {% endif %}
 
