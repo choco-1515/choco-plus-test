@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', function() {
             clearTimeout(timeout);
             
             const query = this.value.trim();
+            console.log('検索入力:', query, '要素:', input.id || input.name);
+            
             if (query.length < 2) {
                 suggestBox.style.display = 'none';
                 return;
@@ -37,10 +39,26 @@ document.addEventListener('DOMContentLoaded', function() {
             // サーバーから候補を取得
             timeout = setTimeout(async () => {
                 try {
-                    const response = await fetch(`/api/suggestions?q=${encodeURIComponent(query)}`);
-                    const suggestions = await response.json();
+                    let suggestions = [];
                     
-                    if (suggestions.length === 0) {
+                    // バックエンドAPIを試す
+                    try {
+                        const apiUrl = `/api/suggestions?q=${encodeURIComponent(query)}`;
+                        console.log('APIを呼び出し:', apiUrl);
+                        
+                        const response = await fetch(apiUrl);
+                        if (response.ok) {
+                            suggestions = await response.json();
+                            console.log('取得した候補:', suggestions);
+                        }
+                    } catch (apiError) {
+                        console.warn('バックエンドAPI呼び出し失敗:', apiError);
+                        // フォールバック：クエリをそのまま返す
+                        suggestions = [query];
+                    }
+                    
+                    if (!suggestions || suggestions.length === 0) {
+                        console.log('候補がありません');
                         suggestBox.style.display = 'none';
                         return;
                     }
@@ -50,12 +68,24 @@ document.addEventListener('DOMContentLoaded', function() {
                         .map(s => `<div class="suggest-item">${escapeHtml(s)}</div>`)
                         .join('');
                     
+                    console.log('候補ボックスのHTML設定完了:', suggestBox.innerHTML.substring(0, 50));
+                    
                     // 位置を調整
                     const rect = input.getBoundingClientRect();
-                    suggestBox.style.left = (rect.left - input.parentElement.getBoundingClientRect().left) + 'px';
-                    suggestBox.style.top = (rect.bottom - input.parentElement.getBoundingClientRect().top) + 'px';
+                    const parentRect = input.parentElement.getBoundingClientRect();
+                    
+                    suggestBox.style.left = (rect.left - parentRect.left) + 'px';
+                    suggestBox.style.top = (rect.bottom - parentRect.top) + 'px';
                     suggestBox.style.width = rect.width + 'px';
+                    suggestBox.style.zIndex = '10000';
                     suggestBox.style.display = 'block';
+                    
+                    console.log('候補ボックス表示:', {
+                        left: suggestBox.style.left,
+                        top: suggestBox.style.top,
+                        width: suggestBox.style.width,
+                        display: suggestBox.style.display
+                    });
                     
                     // 候補をクリックしたら値をセット
                     document.querySelectorAll('.suggest-item').forEach(item => {
