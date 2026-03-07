@@ -57,9 +57,9 @@ def get_proxy_thumbnail(video_id, proxy_type="img.youtube.com"):
         return f"/api/thumbnail/{video_id}"
     return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
-def search_youtube(query, page_token=None, proxy_type="img.youtube.com"):
+def search_youtube(query, page_token=None, proxy_type="img.youtube.com", search_type="video"):
     for key in YOUTUBE_API_KEYS:
-        url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&maxResults=20&key={key}"
+        url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type={search_type}&maxResults=20&key={key}"
         if page_token:
             url += f"&pageToken={page_token}"
         try:
@@ -68,13 +68,24 @@ def search_youtube(query, page_token=None, proxy_type="img.youtube.com"):
                 data = response.json()
                 results = []
                 for item in data.get('items', []):
-                    v_id = item['id']['videoId']
-                    results.append({
-                        'id': v_id,
-                        'title': item['snippet']['title'],
-                        'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
-                        'channel': item['snippet']['channelTitle']
-                    })
+                    if search_type == "channel":
+                        results.append({
+                            'id': item['id']['channelId'],
+                            'title': item['snippet']['title'],
+                            'thumbnail': item['snippet']['thumbnails']['default']['url'],
+                            'type': 'channel',
+                            'description': item['snippet']['description']
+                        })
+                    else:
+                        v_id = item['id']['videoId']
+                        results.append({
+                            'id': v_id,
+                            'title': item['snippet']['title'],
+                            'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
+                            'channel': item['snippet']['channelTitle'],
+                            'channel_id': item['snippet']['channelId'],
+                            'type': 'video'
+                        })
                 return results, data.get('nextPageToken')
         except Exception as e:
             print(f"YouTube API error with key {key[:10]}...: {e}")
@@ -82,24 +93,34 @@ def search_youtube(query, page_token=None, proxy_type="img.youtube.com"):
     print(f"All YouTube API keys failed for query: {query}")
     return None, None
 
-def search_invidious(query, page=1, proxy_type="img.youtube.com"):
+def search_invidious(query, page=1, proxy_type="img.youtube.com", search_type="video"):
     instances = INVIDIOUS_INSTANCES.copy()
     random.shuffle(instances)
     for instance in instances:
-        url = f"{instance}/api/v1/search?q={query}&type=video&page={page}"
+        url = f"{instance}/api/v1/search?q={query}&type={search_type}&page={page}"
         try:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 results = []
                 for item in data:
-                    v_id = item['videoId']
-                    results.append({
-                        'id': v_id,
-                        'title': item['title'],
-                        'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
-                        'channel': item['author']
-                    })
+                    if search_type == "channel":
+                        results.append({
+                            'id': item['authorId'],
+                            'title': item['author'],
+                            'thumbnail': item.get('authorThumbnails', [{}])[0].get('url', ''),
+                            'type': 'channel',
+                            'description': item.get('description', '')
+                        })
+                    else:
+                        v_id = item['videoId']
+                        results.append({
+                            'id': v_id,
+                            'title': item['title'],
+                            'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
+                            'channel': item['author'],
+                            'type': 'video'
+                        })
                 return results, page + 1
         except Exception as e:
             print(f"Invidious error {instance}: {e}")
@@ -135,19 +156,34 @@ def search():
         response.set_cookie('search_mode', mode, max_age=2592000)
         return response
     
-    results = None
+    channels = None
+    videos = None
     next_page = None
     
     if mode == 'inv_first':
-        results, next_page = search_invidious(query, page, proxy_type)
-        if not results:
-            results, next_page = search_youtube(query, token, proxy_type)
+        channels, _ = search_invidious(query, page, proxy_type, 'channel')
+        if not channels:
+            channels, _ = search_youtube(query, token, proxy_type, 'channel')
+        
+        videos, next_page = search_invidious(query, page, proxy_type, 'video')
+        if not videos:
+            videos, next_page = search_youtube(query, token, proxy_type, 'video')
     else:
-        results, next_page = search_youtube(query, token, proxy_type)
-        if not results:
-            results, next_page = search_invidious(query, page, proxy_type)
+        channels, _ = search_youtube(query, token, proxy_type, 'channel')
+        if not channels:
+            channels, _ = search_invidious(query, page, proxy_type, 'channel')
+        
+        videos, next_page = search_youtube(query, token, proxy_type, 'video')
+        if not videos:
+            videos, next_page = search_invidious(query, page, proxy_type, 'video')
     
-    response = make_response(render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type))
+    combined_results = []
+    if channels:
+        combined_results.extend(channels)
+    if videos:
+        combined_results.extend(videos)
+    
+    response = make_response(render_template('search.html', results=combined_results if combined_results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type))
     response.set_cookie('proxy_type', proxy_type, max_age=2592000)
     response.set_cookie('search_mode', mode, max_age=2592000)
     return response
@@ -257,6 +293,104 @@ def proxy_thumbnail(video_id):
 @app.route('/watch/<video_id>')
 def watch(video_id):
     return render_template('watch.html', video_id=video_id)
+
+@app.route('/channel/<channel_id>')
+def channel(channel_id):
+    proxy_type = request.cookies.get('proxy_type', 'self-hosted')
+    
+    channel_data = None
+    videos = []
+    
+    for key in YOUTUBE_API_KEYS:
+        try:
+            url = f"https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id={channel_id}&key={key}"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('items'):
+                    channel_data = data['items'][0]
+                    break
+        except Exception as e:
+            print(f"Error fetching channel info: {e}")
+            continue
+    
+    if not channel_data:
+        instances = INVIDIOUS_INSTANCES.copy()
+        random.shuffle(instances)
+        for instance in instances:
+            try:
+                url = f"{instance}/api/v1/channels/{channel_id}"
+                response = requests.get(url, timeout=5)
+                if response.status_code == 200:
+                    channel_data = response.json()
+                    break
+            except:
+                continue
+    
+    for key in YOUTUBE_API_KEYS:
+        try:
+            url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={channel_id}&type=video&maxResults=20&key={key}"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get('items', []):
+                    v_id = item['id']['videoId']
+                    videos.append({
+                        'id': v_id,
+                        'title': item['snippet']['title'],
+                        'thumbnail': get_proxy_thumbnail(v_id, proxy_type)
+                    })
+                break
+        except Exception as e:
+            print(f"Error fetching channel videos: {e}")
+            continue
+    
+    channel_name = "Unknown"
+    subscriber_count = None
+    video_count = None
+    view_count = None
+    description = None
+    channel_image = None
+    
+    if channel_data:
+        if 'snippet' in channel_data:
+            channel_name = channel_data['snippet'].get('title', 'Unknown')
+            description = channel_data['snippet'].get('description', '')
+            thumbnails = channel_data['snippet'].get('thumbnails', {})
+            if thumbnails:
+                channel_image = thumbnails.get('high', {}).get('url') or thumbnails.get('default', {}).get('url')
+        
+        if 'statistics' in channel_data:
+            sub_count = channel_data['statistics'].get('subscriberCount')
+            if sub_count:
+                if int(sub_count) >= 1000000:
+                    subscriber_count = f"{int(sub_count)/1000000:.1f}M"
+                elif int(sub_count) >= 1000:
+                    subscriber_count = f"{int(sub_count)/1000:.1f}K"
+                else:
+                    subscriber_count = sub_count
+            
+            vid_count = channel_data['statistics'].get('videoCount')
+            if vid_count:
+                video_count = f"{int(vid_count):,}"
+            
+            view = channel_data['statistics'].get('viewCount')
+            if view:
+                if int(view) >= 1000000000:
+                    view_count = f"{int(view)/1000000000:.1f}B"
+                elif int(view) >= 1000000:
+                    view_count = f"{int(view)/1000000:.1f}M"
+                else:
+                    view_count = view
+    
+    return render_template('channel.html', 
+                          channel_name=channel_name,
+                          subscriber_count=subscriber_count,
+                          video_count=video_count,
+                          view_count=view_count,
+                          description=description,
+                          channel_image=channel_image,
+                          videos=videos)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
