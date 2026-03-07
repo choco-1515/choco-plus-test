@@ -49,6 +49,9 @@ INVIDIOUS_INSTANCES = [
 def get_proxy_thumbnail(video_id, proxy_type="img.youtube.com"):
     if proxy_type == "i.ytimg.com":
         return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    elif proxy_type == "self-hosted":
+        # Self-hosted proxy thumbnail method
+        return f"/api/thumbnail/{video_id}"
     return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
 def search_youtube(query, page_token=None, proxy_type="img.youtube.com"):
@@ -138,14 +141,16 @@ def trend():
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                for item in data:
-                    v_id = item.get('videoId') or item.get('id')
+                # Handle the "trending" key if it exists, otherwise treat as array
+                trending_list = data.get('trending', data) if isinstance(data, dict) else data
+                for item in trending_list:
+                    v_id = item.get('id') or item.get('videoId')
                     if not v_id: continue
                     results.append({
                         'id': v_id,
                         'title': item.get('title') or 'No Title',
                         'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
-                        'channel': item.get('author') or item.get('channelTitle') or item.get('uploader') or 'Unknown'
+                        'channel': item.get('channel') or item.get('author') or item.get('channelTitle') or item.get('uploader') or 'Unknown'
                     })
         except Exception as e:
             print(f"Error fetching JP trend: {e}")
@@ -172,6 +177,19 @@ def trend():
                 continue
                 
     return render_template('trend.html', results=results, region=region, proxy_type=proxy_type)
+
+@app.route('/api/thumbnail/<video_id>')
+def proxy_thumbnail(video_id):
+    """Self-hosted proxy thumbnail - fetches from YouTube and serves locally"""
+    try:
+        url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.content, 200, {'Content-Type': response.headers.get('Content-Type', 'image/jpeg')}
+    except:
+        pass
+    # Fallback to 1x1 transparent pixel if fetch fails
+    return bytes.fromhex('47494638396101000100800000FFFFFF00000021F90400000000002C00000000010001000002024401003B'), 200, {'Content-Type': 'image/gif'}
 
 @app.route('/watch/<video_id>')
 def watch(video_id):
