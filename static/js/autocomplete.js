@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     let suggestions = [];
                     
-                    // バックエンドAPIを試す
+                    // バックエンドAPIから候補を取得
                     try {
                         const apiUrl = `/api/suggestions?q=${encodeURIComponent(query)}`;
                         console.log('APIを呼び出し:', apiUrl);
@@ -50,6 +50,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (response.ok) {
                             suggestions = await response.json();
                             console.log('取得した候補:', suggestions);
+                        } else {
+                            console.warn('API応答エラー:', response.status);
+                            suggestions = [query];
                         }
                     } catch (apiError) {
                         console.warn('バックエンドAPI呼び出し失敗:', apiError);
@@ -57,18 +60,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         suggestions = [query];
                     }
                     
+                    // 候補がない場合でもボックスを表示（動作確認用）
                     if (!suggestions || suggestions.length === 0) {
-                        console.log('候補がありません');
-                        suggestBox.style.display = 'none';
-                        return;
+                        console.log('候補がありません - 空のボックスを表示');
+                        suggestions = [];
+                        // 空のボックスを表示して動作を確認
+                        suggestBox.innerHTML = '<div style="padding: 10px 20px; color: #999; text-align: center;">検索中...</div>';
+                    } else {
+                        // 候補を表示
+                        suggestBox.innerHTML = suggestions
+                            .map(s => `<div class="suggest-item">${escapeHtml(s)}</div>`)
+                            .join('');
+                        
+                        console.log('候補ボックスのHTML設定完了:', suggestBox.innerHTML.substring(0, 50));
                     }
-                    
-                    // 候補を表示
-                    suggestBox.innerHTML = suggestions
-                        .map(s => `<div class="suggest-item">${escapeHtml(s)}</div>`)
-                        .join('');
-                    
-                    console.log('候補ボックスのHTML設定完了:', suggestBox.innerHTML.substring(0, 50));
                     
                     // 位置を調整
                     const rect = input.getBoundingClientRect();
@@ -84,7 +89,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         left: suggestBox.style.left,
                         top: suggestBox.style.top,
                         width: suggestBox.style.width,
-                        display: suggestBox.style.display
+                        display: suggestBox.style.display,
+                        suggestionCount: suggestions.length
                     });
                     
                     // 候補をクリックしたら値をセット
@@ -97,7 +103,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                 } catch (error) {
                     console.error('検索候補の取得に失敗:', error);
-                    suggestBox.style.display = 'none';
+                    // エラーでもボックスを表示
+                    suggestBox.innerHTML = '<div style="padding: 10px 20px; color: #999; text-align: center;">エラー</div>';
+                    suggestBox.style.display = 'block';
                 }
             }, 300);
         });
