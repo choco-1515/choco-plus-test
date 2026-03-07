@@ -3,38 +3,34 @@
 {% block title %}Choco-Tube-Plus{% endblock %}
 
 {% block content %}
-<div style="text-align: center; margin-top: 100px;">
-    <h1 style="font-size: 3rem; color: #6a4c93;">Choco<span>-Tube-Plus</span></h1>
-    <p style="color: #aaa; margin-bottom: 30px;">広告なしでYouTubeを楽しみましょう</p>
+<div style="text-align: center; margin-top: 80px;">
+    <h1 style="font-size: 4rem; color: #fa9d5a; margin-bottom: 20px;">Choco<span style="color: #fff;">-Tube-Plus</span></h1>
+    <p style="color: #aaa; margin-bottom: 40px; font-size: 1.1rem;">広告なしでYouTubeを楽しみましょう</p>
     
-    <div style="max-width: 600px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 24px; border: 1px solid #333;">
+    <div style="max-width: 600px; margin: 0 auto; background: #1e1e1e; padding: 40px; border-radius: 24px; border: 1px solid #333;">
         <form action="/search" method="get">
-            <div class="search-form" style="margin-bottom: 20px;">
+            <div class="search-form" style="margin-bottom: 30px;">
                 <input type="text" name="q" placeholder="動画を検索" required>
                 <button type="submit">検索</button>
             </div>
             
-            <div style="text-align: left; margin-bottom: 15px;">
-                <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #ccc;">検索モード:</p>
-                <div style="display: flex; gap: 20px; font-size: 0.9rem; color: #aaa;">
+            <div style="text-align: left; margin-bottom: 25px;">
+                <p style="margin: 0 0 12px 0; font-size: 1rem; color: #fff; font-weight: 600;">検索モード:</p>
+                <div style="display: flex; gap: 20px; font-size: 1rem; color: #aaa;">
                     <label style="cursor: pointer;"><input type="radio" name="mode" value="inv_first" checked> Invidious優先</label>
                     <label style="cursor: pointer;"><input type="radio" name="mode" value="yt_first"> YouTube API優先</label>
                 </div>
             </div>
 
             <div style="text-align: left;">
-                <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #ccc;">サムネイルプロキシ:</p>
-                <div style="display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.9rem; color: #aaa;">
-                    <label style="cursor: pointer;"><input type="radio" name="proxy" value="img.youtube.com" checked> img.youtube.com</label>
+                <p style="margin: 0 0 12px 0; font-size: 1rem; color: #fff; font-weight: 600;">サムネイルプロキシ:</p>
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; font-size: 1rem; color: #aaa;">
+                    <label style="cursor: pointer;"><input type="radio" name="proxy" value="self-hosted" checked> 自サーバー</label>
+                    <label style="cursor: pointer;"><input type="radio" name="proxy" value="img.youtube.com"> img.youtube.com</label>
                     <label style="cursor: pointer;"><input type="radio" name="proxy" value="i.ytimg.com"> i.ytimg.com</label>
-                    <label style="cursor: pointer;"><input type="radio" name="proxy" value="self-hosted"> 自サーバー</label>
                 </div>
             </div>
         </form>
-    </div>
-    
-    <div style="margin-top: 50px;">
-        <a href="/trend" style="display: inline-block; padding: 12px 30px; background: #6a4c93; color: #fff; text-decoration: none; border-radius: 30px; font-weight: bold;">🔥 トレンドを見る</a>
     </div>
 </div>
 {% endblock %}
