@@ -46,10 +46,12 @@ INVIDIOUS_INSTANCES = [
     "https://invidious.dhusch.de"
 ]
 
-def get_proxy_thumbnail(video_id):
+def get_proxy_thumbnail(video_id, proxy_type="img.youtube.com"):
+    if proxy_type == "i.ytimg.com":
+        return f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
     return f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
 
-def search_youtube(query, page_token=None):
+def search_youtube(query, page_token=None, proxy_type="img.youtube.com"):
     for key in YOUTUBE_API_KEYS:
         url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&maxResults=20&key={key}"
         if page_token:
@@ -64,7 +66,7 @@ def search_youtube(query, page_token=None):
                     results.append({
                         'id': v_id,
                         'title': item['snippet']['title'],
-                        'thumbnail': get_proxy_thumbnail(v_id),
+                        'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                         'channel': item['snippet']['channelTitle']
                     })
                 return results, data.get('nextPageToken')
@@ -72,7 +74,7 @@ def search_youtube(query, page_token=None):
             continue
     return None, None
 
-def search_invidious(query, page=1):
+def search_invidious(query, page=1, proxy_type="img.youtube.com"):
     instances = INVIDIOUS_INSTANCES.copy()
     random.shuffle(instances)
     for instance in instances:
@@ -87,7 +89,7 @@ def search_invidious(query, page=1):
                     results.append({
                         'id': v_id,
                         'title': item['title'],
-                        'thumbnail': get_proxy_thumbnail(v_id),
+                        'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                         'channel': item['author']
                     })
                 return results, page + 1
@@ -105,27 +107,29 @@ def search():
     mode = request.args.get('mode', 'inv_first')
     page = request.args.get('page', 1, type=int)
     token = request.args.get('token', None)
+    proxy_type = request.args.get('proxy', 'img.youtube.com')
     
     if not query:
-        return render_template('search.html', results=[], query="")
+        return render_template('search.html', results=[], query="", proxy_type=proxy_type)
     
     results = None
     next_page = None
     
     if mode == 'inv_first':
-        results, next_page = search_invidious(query, page)
+        results, next_page = search_invidious(query, page, proxy_type)
         if not results:
-            results, next_page = search_youtube(query, token)
+            results, next_page = search_youtube(query, token, proxy_type)
     else:
-        results, next_page = search_youtube(query, token)
+        results, next_page = search_youtube(query, token, proxy_type)
         if not results:
-            results, next_page = search_invidious(query, page)
+            results, next_page = search_invidious(query, page, proxy_type)
         
-    return render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page)
+    return render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type)
 
 @app.route('/trend')
 def trend():
     region = request.args.get('region', 'JP')
+    proxy_type = request.args.get('proxy', 'img.youtube.com')
     results = []
     
     if region == 'JP':
@@ -139,7 +143,7 @@ def trend():
                     results.append({
                         'id': v_id,
                         'title': item.get('title'),
-                        'thumbnail': get_proxy_thumbnail(v_id),
+                        'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                         'channel': item.get('author') or item.get('channelTitle', 'Unknown')
                     })
         except:
@@ -158,14 +162,14 @@ def trend():
                         results.append({
                             'id': v_id,
                             'title': item['title'],
-                            'thumbnail': get_proxy_thumbnail(v_id),
+                            'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                             'channel': item['author']
                         })
                     break
             except:
                 continue
                 
-    return render_template('trend.html', results=results, region=region)
+    return render_template('trend.html', results=results, region=region, proxy_type=proxy_type)
 
 @app.route('/watch/<video_id>')
 def watch(video_id):
