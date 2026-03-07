@@ -17,26 +17,47 @@
             <div style="text-align: left; margin-bottom: 25px;">
                 <p style="margin: 0 0 12px 0; font-size: 1rem; color: #fff; font-weight: 600;">検索モード:</p>
                 <div style="display: flex; gap: 20px; font-size: 1rem; color: #aaa;">
-                    <label style="cursor: pointer;"><input type="radio" name="mode" value="inv_first" checked> Invidious優先</label>
-                    <label style="cursor: pointer;"><input type="radio" name="mode" value="yt_first"> YouTube API優先</label>
+                    <label style="cursor: pointer;"><input type="radio" data-mode="mode" value="inv_first" checked> Invidious優先</label>
+                    <label style="cursor: pointer;"><input type="radio" data-mode="mode" value="yt_first"> YouTube API優先</label>
                 </div>
             </div>
 
             <div style="text-align: left;">
                 <p style="margin: 0 0 12px 0; font-size: 1rem; color: #fff; font-weight: 600;">サムネイルプロキシ:</p>
                 <div style="display: flex; gap: 20px; flex-wrap: wrap; font-size: 1rem; color: #aaa;">
-                    <label style="cursor: pointer;"><input type="radio" name="proxy" value="self-hosted" checked> 自サーバー</label>
-                    <label style="cursor: pointer;"><input type="radio" name="proxy" value="img.youtube.com"> img.youtube.com</label>
-                    <label style="cursor: pointer;"><input type="radio" name="proxy" value="i.ytimg.com"> i.ytimg.com</label>
+                    <label style="cursor: pointer;"><input type="radio" data-mode="proxy" value="self-hosted" checked> 自サーバー</label>
+                    <label style="cursor: pointer;"><input type="radio" data-mode="proxy" value="img.youtube.com"> img.youtube.com</label>
+                    <label style="cursor: pointer;"><input type="radio" data-mode="proxy" value="i.ytimg.com"> i.ytimg.com</label>
                 </div>
             </div>
         </form>
         <script>
             document.getElementById('main-search-form').addEventListener('submit', function(e) {
-                const proxy = document.querySelector('input[name="proxy"]:checked').value;
-                const mode = document.querySelector('input[name="mode"]:checked').value;
-                document.cookie = 'proxy_type=' + proxy + '; max-age=2592000';
-                document.cookie = 'search_mode=' + mode + '; max-age=2592000';
+                const proxy = document.querySelector('input[data-mode="proxy"]:checked').value;
+                const mode = document.querySelector('input[data-mode="mode"]:checked').value;
+                document.cookie = 'proxy_type=' + proxy + '; max-age=2592000; path=/';
+                document.cookie = 'search_mode=' + mode + '; max-age=2592000; path=/';
+            });
+            
+            document.addEventListener('DOMContentLoaded', function() {
+                const proxyCookie = document.cookie.split('; ').find(row => row.startsWith('proxy_type='));
+                const modeCookie = document.cookie.split('; ').find(row => row.startsWith('search_mode='));
+                
+                if (proxyCookie) {
+                    const proxyValue = proxyCookie.split('=')[1];
+                    const proxyRadios = document.querySelectorAll('input[data-mode="proxy"]');
+                    proxyRadios.forEach(radio => {
+                        if (radio.value === proxyValue) radio.checked = true;
+                    });
+                }
+                
+                if (modeCookie) {
+                    const modeValue = modeCookie.split('=')[1];
+                    const modeRadios = document.querySelectorAll('input[data-mode="mode"]');
+                    modeRadios.forEach(radio => {
+                        if (radio.value === modeValue) radio.checked = true;
+                    });
+                }
             });
         </script>
     </div>
