@@ -284,13 +284,15 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
                 if not v_id: continue
                 video_ids.append(v_id)
                 
+                published = item.get('published') or item.get('publishedAt') or item.get('uploadedAt') or ''
                 results.append({
                     'id': v_id,
                     'title': item.get('title') or 'No Title',
                     'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                     'channel': item.get('channel') or item.get('author') or item.get('channelTitle') or item.get('uploader') or 'Unknown',
                     'duration': '',
-                    'views': 'N/A'
+                    'views': 'N/A',
+                    'published_at': published
                 })
             
             # Fetch duration and view count from YouTube API
@@ -358,7 +360,8 @@ def trend():
                             'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
                             'channel': item['author'],
                             'duration': '',
-                            'views': 'N/A'
+                            'views': 'N/A',
+                            'published_at': item.get('uploadedAt', '')
                         })
                     
                     # Fetch duration and view count from YouTube API
@@ -457,6 +460,43 @@ def format_time_seconds(seconds):
             return f"{minutes}:{secs:02d}"
     except:
         return ""
+
+def format_relative_date(iso_date_str):
+    """Format ISO 8601 date to 'YYYY-MM-DD/○日前' format"""
+    if not iso_date_str:
+        return ""
+    try:
+        from datetime import datetime
+        # Parse ISO 8601 format
+        if 'T' in iso_date_str:
+            dt = datetime.fromisoformat(iso_date_str.replace('Z', '+00:00'))
+        else:
+            dt = datetime.fromisoformat(iso_date_str)
+        
+        date_part = dt.strftime('%Y-%m-%d')
+        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.utcnow()
+        delta = now - dt
+        days = delta.days
+        
+        if days == 0:
+            relative = "今日"
+        elif days == 1:
+            relative = "1日前"
+        elif days < 7:
+            relative = f"{days}日前"
+        elif days < 30:
+            weeks = days // 7
+            relative = f"{weeks}週間前" if weeks > 1 else "1週間前"
+        elif days < 365:
+            months = days // 30
+            relative = f"{months}ヶ月前" if months > 1 else "1ヶ月前"
+        else:
+            years = days // 365
+            relative = f"{years}年前" if years > 1 else "1年前"
+        
+        return f"{date_part}/{relative}"
+    except:
+        return iso_date_str[:10] if len(iso_date_str) >= 10 else iso_date_str
 
 def get_video_details(video_id, key):
     try:
@@ -725,6 +765,9 @@ def channel_more(channel_id):
     except Exception as e:
         print(f"Error in channel_more: {e}")
         return jsonify({'videos': []})
+
+# Register Jinja2 filter
+app.jinja_env.filters['format_relative_date'] = format_relative_date
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
