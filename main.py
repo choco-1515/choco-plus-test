@@ -213,12 +213,14 @@ def search():
     token = request.args.get('token', None)
     proxy_type = request.cookies.get('proxy_type', 'self-hosted')
     search_type = request.cookies.get('search_type', 'video')
+    date_format = request.cookies.get('date_format', 'ago')
     
     if not query:
-        response = make_response(render_template('search.html', results=[], query="", proxy_type=proxy_type, mode=mode, search_type=search_type))
+        response = make_response(render_template('search.html', results=[], query="", proxy_type=proxy_type, mode=mode, search_type=search_type, date_format=date_format))
         response.set_cookie('proxy_type', proxy_type, max_age=2592000)
         response.set_cookie('search_mode', mode, max_age=2592000)
         response.set_cookie('search_type', search_type, max_age=2592000)
+        response.set_cookie('date_format', date_format, max_age=2592000)
         return response
     
     results = None
@@ -233,10 +235,11 @@ def search():
         if not results:
             results, next_page = search_invidious(query, page, proxy_type, search_type)
     
-    response = make_response(render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type, search_type=search_type))
+    response = make_response(render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type, search_type=search_type, date_format=date_format))
     response.set_cookie('proxy_type', proxy_type, max_age=2592000)
     response.set_cookie('search_mode', mode, max_age=2592000)
     response.set_cookie('search_type', search_type, max_age=2592000)
+    response.set_cookie('date_format', date_format, max_age=2592000)
     return response
 
 def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
@@ -336,6 +339,7 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
 def trend():
     region = request.cookies.get('trend_region', 'JP')
     proxy_type = request.cookies.get('proxy_type', 'self-hosted')
+    date_format = request.cookies.get('date_format', 'ago')
     jp_category = request.cookies.get('trend_category', 'all')
     results = []
     
@@ -394,8 +398,9 @@ def trend():
             except:
                 continue
     
-    flask_response = make_response(render_template('trend.html', results=results, region=region, proxy_type=proxy_type, jp_category=jp_category))
+    flask_response = make_response(render_template('trend.html', results=results, region=region, proxy_type=proxy_type, date_format=date_format, jp_category=jp_category))
     flask_response.set_cookie('proxy_type', proxy_type, max_age=2592000)
+    flask_response.set_cookie('date_format', date_format, max_age=2592000)
     flask_response.set_cookie('trend_region', region, max_age=2592000)
     flask_response.set_cookie('trend_category', jp_category, max_age=2592000)
     return flask_response
