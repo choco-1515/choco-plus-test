@@ -456,8 +456,10 @@
 </div>
 
 <script>
-    let videosOffset = {{ videos|length }};
-    let shortsOffset = {{ shorts|length }};
+    let videosFetched = {{ videos|length }};
+    let shortsFetched = {{ shorts|length }};
+    let nextVideoOffset = videosFetched + shortsFetched;
+    let nextShortsOffset = videosFetched + shortsFetched;
     const channelId = window.location.pathname.split('/').pop();
     
     document.addEventListener('DOMContentLoaded', function() {
@@ -501,7 +503,7 @@
         const loadMoreBtn = type === 'videos' ? document.getElementById('load-more-btn') : document.getElementById('load-more-shorts-btn');
         const loadingSpinner = type === 'videos' ? document.getElementById('loading-spinner') : document.getElementById('loading-spinner-shorts');
         const grid = type === 'videos' ? document.getElementById('video-grid') : document.getElementById('shorts-grid');
-        const offset = type === 'videos' ? videosOffset : shortsOffset;
+        const offset = type === 'videos' ? nextVideoOffset : nextShortsOffset;
         
         loadMoreBtn.classList.add('hidden');
         loadingSpinner.classList.remove('hidden');
@@ -537,13 +539,14 @@
                     grid.appendChild(card);
                 });
                 
-                if (type === 'videos') {
-                    videosOffset += videos.length;
-                } else {
-                    shortsOffset += videos.length;
-                }
-                
                 if (videos.length > 0) {
+                    if (type === 'videos') {
+                        videosFetched += videos.length;
+                        nextVideoOffset += 50;
+                    } else {
+                        shortsFetched += videos.length;
+                        nextShortsOffset += 50;
+                    }
                     loadMoreBtn.classList.remove('hidden');
                 } else {
                     loadMoreBtn.innerHTML = 'すべて読み込みました';
