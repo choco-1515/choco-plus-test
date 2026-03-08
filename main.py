@@ -278,16 +278,52 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
                 # デフォルト
                 trending_list = data.get('trending', data) if isinstance(data, dict) else data
             
+            video_ids = []
             for item in trending_list:
                 v_id = item.get('id') or item.get('videoId')
                 if not v_id: continue
+                video_ids.append(v_id)
                 
                 results.append({
                     'id': v_id,
                     'title': item.get('title') or 'No Title',
                     'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
-                    'channel': item.get('channel') or item.get('author') or item.get('channelTitle') or item.get('uploader') or 'Unknown'
+                    'channel': item.get('channel') or item.get('author') or item.get('channelTitle') or item.get('uploader') or 'Unknown',
+                    'duration': '',
+                    'views': 'N/A'
                 })
+            
+            # Fetch duration and view count from YouTube API
+            if video_ids:
+                for key in YOUTUBE_API_KEYS:
+                    try:
+                        stats_url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics&id={','.join(video_ids[:50])}&key={key}"
+                        stats_response = requests.get(stats_url, timeout=5)
+                        if stats_response.status_code == 200:
+                            stats_data = stats_response.json()
+                            stats_map = {item['id']: item for item in stats_data.get('items', [])}
+                            for result in results:
+                                if result['id'] in stats_map:
+                                    item = stats_map[result['id']]
+                                    duration = item.get('contentDetails', {}).get('duration', '')
+                                    result['duration'] = parse_iso8601_duration(duration)
+                                    
+                                    # Check if live
+                                    is_live = item.get('contentDetails', {}).get('projection', None) == 'live'
+                                    if is_live:
+                                        result['duration'] = 'LIVE'
+                                    
+                                    view_count = int(item.get('statistics', {}).get('viewCount', 0))
+                                    if view_count >= 1000000:
+                                        result['views'] = f"{view_count/1000000:.1f}M"
+                                    elif view_count >= 1000:
+                                        result['views'] = f"{view_count/1000:.1f}K"
+                                    else:
+                                        result['views'] = str(view_count)
+                            break
+                    except Exception as e:
+                        print(f"Error fetching JP trend stats: {e}")
+                        continue
     except Exception as e:
         print(f"Error fetching JP trend (category={category}): {e}")
         pass
@@ -312,14 +348,45 @@ def trend():
                 response = requests.get(url, timeout=5)
                 if response.status_code == 200:
                     data = response.json()
+                    video_ids = []
                     for item in data:
                         v_id = item['videoId']
+                        video_ids.append(v_id)
                         results.append({
                             'id': v_id,
                             'title': item['title'],
                             'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
-                            'channel': item['author']
+                            'channel': item['author'],
+                            'duration': '',
+                            'views': 'N/A'
                         })
+                    
+                    # Fetch duration and view count from YouTube API
+                    if video_ids:
+                        for key in YOUTUBE_API_KEYS:
+                            try:
+                                stats_url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics&id={','.join(video_ids[:50])}&key={key}"
+                                stats_response = requests.get(stats_url, timeout=5)
+                                if stats_response.status_code == 200:
+                                    stats_data = stats_response.json()
+                                    stats_map = {item['id']: item for item in stats_data.get('items', [])}
+                                    for result in results:
+                                        if result['id'] in stats_map:
+                                            item = stats_map[result['id']]
+                                            duration = item.get('contentDetails', {}).get('duration', '')
+                                            result['duration'] = parse_iso8601_duration(duration)
+                                            
+                                            view_count = int(item.get('statistics', {}).get('viewCount', 0))
+                                            if view_count >= 1000000:
+                                                result['views'] = f"{view_count/1000000:.1f}M"
+                                            elif view_count >= 1000:
+                                                result['views'] = f"{view_count/1000:.1f}K"
+                                            else:
+                                                result['views'] = str(view_count)
+                                    break
+                            except Exception as e:
+                                print(f"Error fetching trend stats: {e}")
+                                continue
                     break
             except:
                 continue
@@ -486,10 +553,10 @@ def channel(channel_id):
                             print(f"Error parsing video item: {e}")
                             continue
                     
-                    # Fetch video details to get duration
+                    # Fetch video details to get duration and statistics
                     if video_ids:
                         try:
-                            details_url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id={','.join(video_ids)}&key={key}"
+                            details_url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics&id={','.join(video_ids)}&key={key}"
                             details_response = requests.get(details_url, timeout=5)
                             if details_response.status_code == 200:
                                 details_data = details_response.json()
@@ -501,6 +568,9 @@ def channel(channel_id):
                                         # Check if it's a short (duration <= 60 seconds)
                                         duration = parse_duration_to_seconds(duration_str)
                                         video['is_short'] = duration <= 60
+                                        # Get view count
+                                        view_count = details_map[video['id']].get('statistics', {}).get('viewCount', '0')
+                                        video['views'] = format_view_count(view_count)
                         except Exception as e:
                             print(f"Error fetching video details: {e}")
                     break
