@@ -156,49 +156,34 @@ def search_invidious(query, page=1, proxy_type="img.youtube.com", search_type="v
                 data = response.json()
                 results = []
                 for item in data:
-                    try:
-                        if search_type == "channel":
-                            results.append({
-                                'id': item['authorId'],
-                                'title': item['author'],
-                                'thumbnail': item.get('authorThumbnails', [{}])[0].get('url', ''),
-                                'type': 'channel',
-                                'description': item.get('description', '')
-                            })
+                    if search_type == "channel":
+                        results.append({
+                            'id': item['authorId'],
+                            'title': item['author'],
+                            'thumbnail': item.get('authorThumbnails', [{}])[0].get('url', ''),
+                            'type': 'channel',
+                            'description': item.get('description', '')
+                        })
+                    else:
+                        v_id = item['videoId']
+                        published_at = item.get('publishedText', '')
+                        view_count = item.get('viewCount', 0)
+                        if view_count >= 1000000:
+                            views = f"{view_count/1000000:.1f}M"
+                        elif view_count >= 1000:
+                            views = f"{view_count/1000:.1f}K"
                         else:
-                            v_id = item.get('videoId', '')
-                            if not v_id:
-                                continue
-                            published_at = item.get('publishedText', '')
-                            
-                            # Parse view count with proper type handling
-                            views = 'N/A'
-                            view_count = item.get('viewCount')
-                            if view_count is not None:
-                                try:
-                                    view_int = int(view_count)
-                                    if view_int >= 1000000:
-                                        views = f"{view_int/1000000:.1f}M"
-                                    elif view_int >= 1000:
-                                        views = f"{view_int/1000:.1f}K"
-                                    else:
-                                        views = str(view_int)
-                                except (ValueError, TypeError):
-                                    views = 'N/A'
-                            
-                            results.append({
-                                'id': v_id,
-                                'title': item.get('title', 'Untitled'),
-                                'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
-                                'channel': item.get('author', 'Unknown Channel'),
-                                'channel_id': item.get('authorId', ''),
-                                'type': 'video',
-                                'views': views,
-                                'published_at': published_at
-                            })
-                    except Exception as e:
-                        print(f"Error parsing search item: {e}")
-                        continue
+                            views = str(view_count)
+                        results.append({
+                            'id': v_id,
+                            'title': item['title'],
+                            'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
+                            'channel': item['author'],
+                            'channel_id': item.get('authorId', ''),
+                            'type': 'video',
+                            'views': views,
+                            'published_at': published_at
+                        })
                 return results, page + 1
         except Exception as e:
             print(f"Invidious error {instance}: {e}")
@@ -371,56 +356,54 @@ def trend():
                     data = response.json()
                     video_ids = []
                     for item in data:
-                        try:
-                            v_id = item.get('videoId', '')
-                            if not v_id:
+                        v_id = item['videoId']
+                        video_ids.append(v_id)
+                        
+                        # Try to get duration from Invidious response first
+                        duration = ''
+                        if 'lengthSeconds' in item:
+                            duration = format_time_seconds(int(item.get('lengthSeconds', 0)))
+                        
+                        results.append({
+                            'id': v_id,
+                            'title': item['title'],
+                            'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
+                            'channel': item['author'],
+                            'duration': duration,
+                            'views': 'N/A',
+                            'published_at': item.get('uploadedAt', '')
+                        })
+                    
+                    # Fetch duration and view count from YouTube API
+                    if video_ids:
+                        for key in YOUTUBE_API_KEYS:
+                            try:
+                                stats_url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics&id={','.join(video_ids[:50])}&key={key}"
+                                stats_response = requests.get(stats_url, timeout=5)
+                                if stats_response.status_code == 200:
+                                    stats_data = stats_response.json()
+                                    stats_map = {item['id']: item for item in stats_data.get('items', [])}
+                                    for result in results:
+                                        if result['id'] in stats_map:
+                                            item = stats_map[result['id']]
+                                            duration = item.get('contentDetails', {}).get('duration', '')
+                                            # Only update duration if not already set from Invidious
+                                            if not result['duration'] and duration:
+                                                result['duration'] = parse_iso8601_duration(duration)
+                                            
+                                            view_count = int(item.get('statistics', {}).get('viewCount', 0))
+                                            if view_count >= 1000000:
+                                                result['views'] = f"{view_count/1000000:.1f}M"
+                                            elif view_count >= 1000:
+                                                result['views'] = f"{view_count/1000:.1f}K"
+                                            else:
+                                                result['views'] = str(view_count)
+                                    break
+                            except Exception as e:
+                                print(f"Error fetching trend stats: {e}")
                                 continue
-                            video_ids.append(v_id)
-                            
-                            # Get duration from lengthSeconds - Invidious may provide this as int
-                            duration = ''
-                            length_seconds = item.get('lengthSeconds')
-                            if length_seconds:
-                                try:
-                                    length_int = int(length_seconds)
-                                    if length_int > 0:
-                                        duration = format_time_seconds(length_int)
-                                except (ValueError, TypeError):
-                                    duration = ''
-                            
-                            # Get view count - Invidious may not always provide this
-                            views = 'N/A'
-                            view_count = item.get('viewCount')
-                            if view_count is not None:
-                                try:
-                                    view_int = int(view_count)
-                                    if view_int >= 1000000:
-                                        views = f"{view_int/1000000:.1f}M"
-                                    elif view_int >= 1000:
-                                        views = f"{view_int/1000:.1f}K"
-                                    else:
-                                        views = str(view_int)
-                                except (ValueError, TypeError):
-                                    views = 'N/A'
-                            
-                            # Get published date - use publishedText
-                            published_at = item.get('publishedText', '')
-                            
-                            results.append({
-                                'id': v_id,
-                                'title': item.get('title', 'Untitled'),
-                                'thumbnail': get_proxy_thumbnail(v_id, proxy_type),
-                                'channel': item.get('author', 'Unknown Channel'),
-                                'duration': duration,
-                                'views': views,
-                                'published_at': published_at
-                            })
-                        except KeyError as e:
-                            print(f"Error parsing trend item: {e}")
-                            continue
                     break
-            except Exception as e:
-                print(f"Error fetching from {instance}: {e}")
+            except:
                 continue
     
     flask_response = make_response(render_template('trend.html', results=results, region=region, proxy_type=proxy_type, date_format=date_format, jp_category=jp_category))
