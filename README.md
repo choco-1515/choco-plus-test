@@ -1,3 +1,4 @@
+バックアップ用のものに置き換えること。今は壊滅的なので
 # Choco-Tube-Plus Projectについて
 
 - Choco-Tubeではコードの汚さや利用のしづらさが目立ったためアップグレードしたChoco-Tube-Plusを作ることにしました。
