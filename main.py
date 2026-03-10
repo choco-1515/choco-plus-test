@@ -566,22 +566,46 @@ def invidious_stream(video_id):
                     url_key = fmt.get('url', '')
                     codec = fmt.get('codec', '')
                     quality = fmt.get('qualityLabel', '')
+                    bitrate = fmt.get('bitrate', '')
 
-                    if not url_key:
+                    if not url_key or not codec:
                         continue
 
-                    if 'video' in codec.lower():
-                        q = quality.split(' ')[0] if quality else 'unknown'
-                        video_formats['video'][
-                            q + ' (WebM)'
-                        ] = url_key
-                    elif 'audio' in codec.lower():
-                        bitrate = fmt.get('bitrate', 'unknown')
-                        codec_name = 'WEBM' if 'opus' in codec.lower() else 'M4A'
-                        video_formats['audio'][
-                            f"{bitrate} ({codec_name})"
-                        ] = url_key
+                    codec_lower = codec.lower()
+                    
+                    # Video formats: check for video codecs (vp9, vp8, av1, h264, h265, etc.)
+                    # These are in adaptiveFormats without audio
+                    if any(vc in codec_lower for vc in ['vp9', 'vp8', 'av1', 'h264', 'h265', 'avc']):
+                        if quality:
+                            q = quality.split(' ')[0]
+                        else:
+                            q = 'unknown'
+                        quality_label = f"{q} (WebM)" if any(x in codec_lower for x in ['vp9', 'vp8', 'av1']) else f"{q} (H.264)"
+                        video_formats['video'][quality_label] = url_key
+                        logger.info(f"Added video format: {quality_label} from {instance}")
+                    
+                    # Audio formats: check for audio codecs (opus, aac, flac, vorbis, etc.)
+                    elif any(ac in codec_lower for ac in ['opus', 'aac', 'flac', 'vorbis', 'mp3']):
+                        # Determine codec name from format
+                        if 'opus' in codec_lower:
+                            codec_name = 'WebM'
+                            quality_label = f"{bitrate} kbps (OPUS)"
+                        elif 'aac' in codec_lower:
+                            codec_name = 'M4A'
+                            quality_label = f"{bitrate} kbps (AAC)"
+                        elif 'vorbis' in codec_lower:
+                            codec_name = 'WebM'
+                            quality_label = f"{bitrate} kbps (Vorbis)"
+                        else:
+                            codec_name = codec.upper()
+                            quality_label = f"{bitrate} kbps ({codec_name})"
+                        
+                        video_formats['audio'][quality_label] = url_key
+                        logger.info(f"Added audio format: {quality_label} from {instance}")
 
+                if video_formats['mp4'] or video_formats['video'] or video_formats['audio'] or video_formats['hls']:
+                    logger.info(f"Successfully fetched formats from {instance}: MP4={len(video_formats['mp4'])}, Video={len(video_formats['video'])}, Audio={len(video_formats['audio'])}, HLS={len(video_formats['hls'])}")
+                
                 return video_formats
         except requests.Timeout:
             logger.warning(f"Timeout fetching from {instance} for video {video_id}")
