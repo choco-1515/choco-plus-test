@@ -458,17 +458,119 @@ def proxy_thumbnail(video_id):
     # Fallback to 1x1 transparent pixel if fetch fails
     return bytes.fromhex('47494638396101000100800000FFFFFF00000021F90400000000002C00000000010001000002024401003B'), 200, {'Content-Type': 'image/gif'}
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+STREAM_APIS = [
+    "https://xeroxyt-nt-apiv1-0ydt.onrender.com",
+    "https://xeroxyt-nt-apiv1-5vsz.onrender.com",
+    "https://xeroxyt-nt-apiv1-m28t.onrender.com",
+    "https://rt5k4d-3000.csb.app",
+    "https://vpdzyc-3000.csb.app"
+]
+
+def fetch_stream_from_api(api_url, video_id):
+    """Fetch stream URL from a single API"""
+    try:
+        response = requests.get(f"{api_url}/stream?id={video_id}", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('url'):
+                return data.get('url')
+            elif data.get('videos'):
+                videos = data.get('videos', [])
+                if videos and len(videos) > 0:
+                    return videos[0].get('url')
+    except:
+        pass
+    return None
+
+@app.route('/api/stream/<video_id>')
+def get_stream(video_id):
+    """Fetch stream URL from multiple APIs in parallel"""
+    stream_url = None
+    
+    # Fetch from all APIs in parallel using ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(fetch_stream_from_api, api, video_id): api 
+            for api in STREAM_APIS
+        }
+        
+        # Return as soon as any API returns a valid stream URL
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result:
+                    stream_url = result
+                    break
+            except:
+                continue
+    
+    if stream_url:
+        return jsonify({'stream_url': stream_url})
+    else:
+        return jsonify({'error': 'Could not fetch stream'}), 503
+
 @app.route('/watch/<video_id>')
 def watch(video_id):
-    return render_template('watch.html', video_id=video_id)
-
-@app.route('/ume/<video_id>')
-def ume_player(video_id):
-    return render_template('play.html', video_id=video_id, mode='nocookie')
-
-@app.route('/edu/<video_id>')
-def edu_player(video_id):
-    return render_template('play.html', video_id=video_id, mode='education')
+    # Try to fetch video metadata
+    metadata = {
+        'video_title': None,
+        'view_count': None,
+        'published_at': None,
+        'channel_name': None,
+        'subscriber_count': None,
+        'channel_icon': None
+    }
+    
+    # Try to get metadata from YouTube API
+    for key in YOUTUBE_API_KEYS[:3]:
+        try:
+            url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id={video_id}&key={key}"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                items = data.get('items', [])
+                if items:
+                    item = items[0]
+                    metadata['video_title'] = item['snippet'].get('title')
+                    metadata['published_at'] = item['snippet'].get('publishedAt', '').split('T')[0]
+                    
+                    view_count = int(item['statistics'].get('viewCount', 0))
+                    if view_count >= 1000000:
+                        metadata['view_count'] = f"{view_count/1000000:.1f}M"
+                    elif view_count >= 1000:
+                        metadata['view_count'] = f"{view_count/1000:.1f}K"
+                    else:
+                        metadata['view_count'] = str(view_count)
+                    
+                    # Get channel info
+                    channel_id = item['snippet']['channelId']
+                    channel_url = f"https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id={channel_id}&key={key}"
+                    channel_response = requests.get(channel_url, timeout=5)
+                    if channel_response.status_code == 200:
+                        channel_data = channel_response.json()
+                        channel_items = channel_data.get('items', [])
+                        if channel_items:
+                            ch = channel_items[0]
+                            metadata['channel_name'] = ch['snippet'].get('title')
+                            
+                            subs = int(ch['statistics'].get('subscriberCount', 0))
+                            if subs >= 1000000:
+                                metadata['subscriber_count'] = f"{subs/1000000:.1f}M"
+                            elif subs >= 1000:
+                                metadata['subscriber_count'] = f"{subs/1000:.1f}K"
+                            else:
+                                metadata['subscriber_count'] = str(subs)
+                            
+                            thumbnails = ch['snippet'].get('thumbnails', {})
+                            metadata['channel_icon'] = thumbnails.get('high', {}).get('url') or thumbnails.get('default', {}).get('url')
+                    break
+        except:
+            continue
+    
+    return render_template('watch.html', video_id=video_id, **metadata)
 
 def format_view_count(count):
     if isinstance(count, str):
