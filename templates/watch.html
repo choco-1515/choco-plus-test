@@ -8,7 +8,7 @@
         display: grid;
         grid-template-columns: 1fr 300px;
         gap: 20px;
-        max-width: 1400px;
+        max-width: 1200px;
         margin: 20px auto;
         padding: 0 15px;
     }
@@ -24,9 +24,10 @@
         width: 100%;
         padding-top: 56.25%;
         background: #000;
-        border-radius: 12px;
+        border-radius: 8px;
         overflow: hidden;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+        max-width: 100%;
     }
 
     .player-container video {
@@ -37,69 +38,32 @@
         height: 100%;
     }
 
-    .video-metadata {
-        background: #1a1a1a;
-        padding: 20px;
-        border-radius: 8px;
-    }
-
-    .video-title {
-        font-size: 22px;
-        font-weight: 600;
-        margin-bottom: 10px;
-        color: #fff;
-    }
-
-    .video-info {
+    .player-error {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
         display: flex;
-        gap: 20px;
-        font-size: 14px;
-        color: #aaa;
-        margin-bottom: 15px;
-    }
-
-    .channel-info {
-        display: flex;
+        flex-direction: column;
+        justify-content: center;
         align-items: center;
-        gap: 12px;
-        padding-top: 15px;
-        border-top: 1px solid #333;
+        background: #000;
     }
 
-    .channel-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: #333;
-    }
-
-    .channel-details {
-        flex: 1;
-    }
-
-    .channel-name {
-        font-weight: 600;
-        color: #fff;
-    }
-
-    .channel-subs {
-        font-size: 12px;
-        color: #aaa;
-    }
-
-    .error-container {
-        background: #ff4444;
+    .error-message-box {
+        background: rgba(255, 68, 68, 0.95);
         color: white;
-        padding: 20px;
+        padding: 30px;
         border-radius: 8px;
         text-align: center;
-        margin: 20px auto;
-        max-width: 600px;
+        max-width: 400px;
     }
 
     .error-message {
         font-size: 16px;
-        margin-bottom: 15px;
+        margin-bottom: 20px;
+        font-weight: 500;
     }
 
     .reload-button {
@@ -111,6 +75,7 @@
         font-weight: 600;
         cursor: pointer;
         font-size: 14px;
+        transition: background 0.2s;
     }
 
     .reload-button:hover {
@@ -118,8 +83,11 @@
     }
 
     .loading-container {
-        text-align: center;
-        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
     }
 
     .spinner {
@@ -136,6 +104,59 @@
         to { transform: rotate(360deg); }
     }
 
+    .video-metadata {
+        background: #1a1a1a;
+        padding: 20px;
+        border-radius: 8px;
+    }
+
+    .video-title {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #fff;
+    }
+
+    .video-info {
+        display: flex;
+        gap: 20px;
+        font-size: 14px;
+        color: #aaa;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+    }
+
+    .channel-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-top: 15px;
+        border-top: 1px solid #333;
+    }
+
+    .channel-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #333;
+        flex-shrink: 0;
+    }
+
+    .channel-details {
+        flex: 1;
+    }
+
+    .channel-name {
+        font-weight: 600;
+        color: #fff;
+        font-size: 14px;
+    }
+
+    .channel-subs {
+        font-size: 12px;
+        color: #aaa;
+    }
+
     .related-videos {
         background: #1a1a1a;
         border-radius: 8px;
@@ -147,33 +168,7 @@
         font-weight: 600;
         border-bottom: 1px solid #333;
         color: #fff;
-    }
-
-    .video-item {
-        padding: 10px;
-        border-bottom: 1px solid #333;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-
-    .video-item:hover {
-        background: #222;
-    }
-
-    .video-item-title {
-        color: #fff;
-        font-size: 13px;
-        font-weight: 600;
-        margin-bottom: 4px;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-
-    .video-item-info {
-        color: #aaa;
-        font-size: 12px;
+        font-size: 14px;
     }
 
     .comments-section {
@@ -186,7 +181,7 @@
 
     .comments-title {
         font-weight: 600;
-        font-size: 18px;
+        font-size: 16px;
         margin-bottom: 15px;
         color: #fff;
     }
@@ -195,6 +190,7 @@
         color: #aaa;
         text-align: center;
         padding: 30px;
+        font-size: 14px;
     }
 
     @media (max-width: 900px) {
@@ -213,63 +209,13 @@
 {% block content %}
 <div class="watch-container">
     <div class="video-section">
-        <!-- Player or Error Message -->
-        {% if stream_url %}
-            <div class="player-container">
-                <video controls="" style="width: 100%; height: 100%;">
-                    <source src="{{ stream_url }}" type="video/mp4">
-                    このブラウザはビデオタグに対応していません
-                </video>
+        <!-- Player Container -->
+        <div class="player-container" id="playerContainer">
+            <div class="loading-container">
+                <div class="spinner"></div>
+                <p style="color: #aaa; margin-top: 15px; font-size: 14px;">ストリームを読み込み中...</p>
             </div>
-        {% elif error_loading %}
-            <div class="error-container">
-                <div class="error-message">ストリームリンクを取得できませんでした。再読み込みしてください</div>
-                <button class="reload-button" onclick="location.reload()">再読み込み</button>
-            </div>
-        {% else %}
-            <div class="player-container" style="position: relative; padding-top: 56.25%;">
-                <div class="loading-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; flex-direction: column;">
-                    <div class="spinner"></div>
-                    <p style="color: #aaa; margin-top: 15px;">ストリームを読み込み中...</p>
-                </div>
-            </div>
-            <script>
-                // ページ読み込み時にストリーム取得APIを呼び出し
-                fetch('/api/stream/{{ video_id }}')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.stream_url) {
-                            // ストリームURL取得成功
-                            const video = document.querySelector('video');
-                            if (video) {
-                                video.src = data.stream_url;
-                                video.load();
-                            }
-                            // ページをリロード
-                            window.location.reload();
-                        } else {
-                            // エラー表示
-                            const playerDiv = document.querySelector('.player-container');
-                            playerDiv.innerHTML = `
-                                <div class="error-container">
-                                    <div class="error-message">ストリームリンクを取得できませんでした。再読み込みしてください</div>
-                                    <button class="reload-button" onclick="location.reload()">再読み込み</button>
-                                </div>
-                            `;
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching stream:', error);
-                        const playerDiv = document.querySelector('.player-container');
-                        playerDiv.innerHTML = `
-                            <div class="error-container">
-                                <div class="error-message">ストリームリンクを取得できませんでした。再読み込みしてください</div>
-                                <button class="reload-button" onclick="location.reload()">再読み込み</button>
-                            </div>
-                        `;
-                    });
-            </script>
-        {% endif %}
+        </div>
 
         <!-- Video Metadata -->
         {% if video_title %}
@@ -310,4 +256,39 @@
         <div class="comment-placeholder">関連動画機能は準備中です</div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const videoId = '{{ video_id }}';
+        const playerContainer = document.getElementById('playerContainer');
+
+        // ストリーム URL を取得
+        fetch('/api/stream/' + videoId)
+            .then(response => response.json())
+            .then(data => {
+                if (data.stream_url) {
+                    // ストリーム URL を取得できた場合
+                    playerContainer.innerHTML = `<video controls style="width: 100%; height: 100%;"><source src="${data.stream_url}" type="video/mp4">このブラウザはビデオタグに対応していません</video>`;
+                } else {
+                    // エラーメッセージを表示
+                    showError();
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching stream:', error);
+                showError();
+            });
+
+        function showError() {
+            playerContainer.innerHTML = `
+                <div class="player-error">
+                    <div class="error-message-box">
+                        <div class="error-message">ストリームリンクを取得できませんでした。<br>再読み込みしてください</div>
+                        <button class="reload-button" onclick="location.reload()">再読み込み</button>
+                    </div>
+                </div>
+            `;
+        }
+    });
+</script>
 {% endblock %}
