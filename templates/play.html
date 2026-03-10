@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+
+{% block title %}再生中 - Choco-Tube-Plus{% endblock %}
+
+{% block extra_head %}
+<style>
+    :root {
+      --main-color: #ff0000;
+      --loop-color: #065fd4;
+      --bg-color: #f9f9f9;
+      --card-color: #ffffff;
+      --text-color: #333;
+      --shadow-color: rgba(0,0,0,0.08);
+      --border-radius: 12px;
+      --link-color: #065fd4;
+    }
+
+    :root.dark {
+      --bg-color: #181818;
+      --card-color: #202020;
+      --text-color: #eaeaea;
+      --shadow-color: rgba(0,0,0,0.4);
+      --link-color: #3ea6ff;
+    }
+
+    body {
+      background-color: var(--bg-color);
+    }
+
+    .player-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+
+    .video-player-wrapper {
+      position: relative;
+      width: 100%;
+      padding-top: 56.25%;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      margin-bottom: 1.5rem;
+    }
+
+    .video-player-wrapper iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .player-controls {
+      background: var(--card-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 12px var(--shadow-color);
+    }
+
+    .mode-selector {
+      margin-bottom: 1rem;
+    }
+
+    .mode-selector label {
+      font-weight: bold;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+    }
+
+    .mode-btn {
+      padding: 0.75rem 1.5rem;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      background: var(--card-color);
+      color: var(--text-color);
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .mode-btn:hover {
+      border-color: var(--main-color);
+      color: var(--main-color);
+    }
+
+    .mode-btn.active {
+      background: var(--main-color);
+      color: white;
+      border-color: var(--main-color);
+    }
+
+    .edu-options {
+      display: none;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #ddd;
+    }
+
+    .edu-options.active {
+      display: block;
+    }
+
+    :root.dark .edu-options {
+      border-top-color: #444;
+    }
+
+    .option-group {
+      margin-bottom: 1rem;
+    }
+
+    .option-group label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .option-group select {
+      width: 100%;
+      padding: 0.6rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: var(--card-color);
+      color: var(--text-color);
+      font-size: 0.95rem;
+    }
+
+    :root.dark .option-group select {
+      border-color: #555;
+    }
+
+    .time-inputs {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .time-inputs > div {
+      flex: 1;
+    }
+
+    .time-inputs label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 0.4rem;
+      font-size: 0.95rem;
+    }
+
+    .time-inputs input {
+      width: 100%;
+      padding: 0.6rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: var(--card-color);
+      color: var(--text-color);
+      font-size: 0.95rem;
+    }
+
+    :root.dark .time-inputs input {
+      border-color: #555;
+    }
+
+    .action-button {
+      width: 100%;
+      padding: 0.85rem;
+      background: var(--main-color);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .action-button:hover {
+      opacity: 0.9;
+    }
+
+    .action-button:active {
+      transform: scale(0.98);
+    }
+
+    .video-url-input {
+      width: 100%;
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: var(--card-color);
+      color: var(--text-color);
+      font-size: 0.95rem;
+    }
+
+    :root.dark .video-url-input {
+      border-color: #555;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="player-container">
+  <div class="video-player-wrapper">
+    <iframe id="videoFrame" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
+  </div>
+
+  <div class="player-controls">
+    <div class="mode-selector">
+      <label>再生モード選択：</label>
+      <div class="button-group">
+        <button class="mode-btn active" data-mode="nocookie" onclick="switchMode('nocookie')">
+          🌐 Nocookie再生 (/ume/)
+        </button>
+        <button class="mode-btn" data-mode="education" onclick="switchMode('education')">
+          🎓 Education再生 (/edu/)
+        </button>
+      </div>
+    </div>
+
+    <div class="edu-options" id="eduOptions">
+      <div class="option-group">
+        <label for="eduProvider">Education パラメータセット：</label>
+        <select id="eduProvider" onchange="onEduProviderChange()">
+          <optgroup label="wakame">
+            <option value="wakame">wakame</option>
+          </optgroup>
+          <optgroup label="siawaseok">
+            <option value="siawaseok">siawaseok</option>
+          </optgroup>
+          <optgroup label="Toka_Kun_">
+            <option value="toka_1">Toka_Kun_-1</option>
+            <option value="toka_2">Toka_Kun_-2</option>
+            <option value="toka_3">Toka_Kun_-3</option>
+          </optgroup>
+          <optgroup label="woolisbest4520">
+            <option value="woolis_1">woolisbest4520-1 (edu.txt)</option>
+            <option value="woolis_2">woolisbest4520-2 (parameter.txt)</option>
+            <option value="woolis_3">woolisbest4520-3 (ep.txt)</option>
+            <option value="woolis_4">woolisbest4520-4 (key1.txt)</option>
+            <option value="woolis_5">woolisbest4520-5 (key2.txt)</option>
+          </optgroup>
+        </select>
+      </div>
+    </div>
+
+    <div class="time-inputs">
+      <div>
+        <label for="startTime">開始位置 (秒、または mm:ss)：</label>
+        <input type="text" id="startTime" placeholder="例: 30 または 1:30">
+      </div>
+      <div>
+        <label for="endTime">終了位置 (秒、または mm:ss)：</label>
+        <input type="text" id="endTime" placeholder="例: 120 または 2:00">
+      </div>
+    </div>
+
+    <label for="videoUrl">動画ID または URL：</label>
+    <input type="text" id="videoUrl" class="video-url-input" placeholder="例: dQw4w9WgXcQ または https://youtu.be/dQw4w9WgXcQ">
+
+    <button class="action-button" onclick="playVideo()">▶️ 再生</button>
+  </div>
+</div>
+
+<script>
+  let currentMode = '{{ mode }}';
+  let currentVideoId = '{{ video_id }}';
+  const EDU_URLS = {
+    'wakame': 'https://raw.githubusercontent.com/wakame02/wktopu/refs/heads/main/edu.text',
+    'siawaseok': 'https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json',
+    'toka_1': 'https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json',
+    'toka_2': 'https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key2.json',
+    'toka_3': 'https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key3.json',
+    'woolis_1': 'https://raw.githubusercontent.com/woolisbest-4520/about-youtube/refs/heads/main/edu/edu.txt',
+    'woolis_2': 'https://raw.githubusercontent.com/woolisbest-4520/about-youtube/refs/heads/main/edu/parameter.txt',
+    'woolis_3': 'https://raw.githubusercontent.com/woolisbest-4520/about-youtube/refs/heads/main/edu/ep.txt',
+    'woolis_4': 'https://raw.githubusercontent.com/woolisbest-4520/about-youtube/refs/heads/main/edu/key1.txt',
+    'woolis_5': 'https://raw.githubusercontent.com/woolisbest-4520/about-youtube/refs/heads/main/edu/key2.txt'
+  };
+
+  function initializeUI() {
+    const videoUrl = document.getElementById('videoUrl');
+    videoUrl.value = currentVideoId;
+    updateModeUI();
+  }
+
+  function switchMode(mode) {
+    currentMode = mode;
+    updateModeUI();
+    localStorage.setItem('playMode', mode);
+  }
+
+  function updateModeUI() {
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.querySelector(`[data-mode="${currentMode}"]`).classList.add('active');
+    
+    const eduOptions = document.getElementById('eduOptions');
+    if (currentMode === 'education') {
+      eduOptions.classList.add('active');
+    } else {
+      eduOptions.classList.remove('active');
+    }
+  }
+
+  function onEduProviderChange() {
+    localStorage.setItem('eduProvider', document.getElementById('eduProvider').value);
+  }
+
+  function convertToSeconds(input) {
+    if (!input) return null;
+    const str = input.trim();
+    if (!str) return null;
+    if (str.includes(':')) {
+      const parts = str.split(':').map(Number);
+      if (parts.some(isNaN)) return null;
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    const val = parseInt(str, 10);
+    return isNaN(val) ? null : val;
+  }
+
+  function updateUrlParam(url, key, value) {
+    const regex = new RegExp(`([?&])(?:amp;)?${key}=[^&]*`, 'gi');
+    if (regex.test(url)) {
+      return url.replace(regex, (match, separator) => {
+        return `${separator}${key}=${value}`;
+      });
+    }
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}${key}=${value}`;
+  }
+
+  function extractVideoId(input) {
+    if (!input) return null;
+    const patterns = [
+      /[?&]v=([\w-]{11})/,
+      /(?:youtu\.be|embed|shorts|live|vi|videos|watch|w|s|v|video|stream|ume|edu)\/([\w-]{11})/
+    ];
+    for (const p of patterns) {
+      const m = input.match(p);
+      if (m) return m[1];
+    }
+    if (/^[\w-]{11}$/.test(input)) return input;
+    return null;
+  }
+
+  async function playVideo() {
+    const input = document.getElementById('videoUrl').value.trim();
+    if (!input) {
+      alert('動画IDまたはURLを入力してください');
+      return;
+    }
+
+    const videoId = extractVideoId(input);
+    if (!videoId) {
+      alert('正しい動画IDまたはURLを入力してください');
+      return;
+    }
+
+    currentVideoId = videoId;
+    let finalUrl = '';
+
+    try {
+      if (currentMode === 'nocookie') {
+        finalUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+      } else {
+        const provider = document.getElementById('eduProvider').value;
+        const paramsUrl = EDU_URLS[provider];
+        const response = await fetch(paramsUrl, { cache: 'no-store' });
+        if (!response.ok) throw new Error('パラメータ取得失敗');
+        
+        let params = '';
+        const contentType = response.headers.get('content-type');
+        
+        if (contentType && contentType.includes('application/json')) {
+          const json = await response.json();
+          params = json.params || json.result || '';
+        } else {
+          params = await response.text();
+        }
+
+        finalUrl = `https://www.youtubeeducation.com/embed/${videoId}${params}`;
+      }
+
+      const startInput = document.getElementById('startTime').value;
+      const endInput = document.getElementById('endTime').value;
+      const startSeconds = convertToSeconds(startInput);
+      const endSeconds = convertToSeconds(endInput);
+
+      if (startSeconds !== null) finalUrl = updateUrlParam(finalUrl, 'start', startSeconds);
+      if (endSeconds !== null) finalUrl = updateUrlParam(finalUrl, 'end', endSeconds);
+
+      finalUrl = updateUrlParam(finalUrl, 'enablejsapi', '1');
+      finalUrl = updateUrlParam(finalUrl, 'origin', window.location.origin);
+
+      document.getElementById('videoFrame').src = finalUrl;
+      localStorage.setItem('lastVideoId', videoId);
+    } catch (error) {
+      console.error(error);
+      alert('動画の読み込みに失敗しました');
+    }
+  }
+
+  document.getElementById('videoUrl').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      playVideo();
+    }
+  });
+
+  window.addEventListener('DOMContentLoaded', function() {
+    const savedMode = localStorage.getItem('playMode');
+    if (savedMode) {
+      currentMode = savedMode;
+    }
+    const savedProvider = localStorage.getItem('eduProvider');
+    if (savedProvider) {
+      document.getElementById('eduProvider').value = savedProvider;
+    }
+    initializeUI();
+    if (currentVideoId) {
+      playVideo();
+    }
+  });
+</script>
+{% endblock %}
