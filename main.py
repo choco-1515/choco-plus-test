@@ -31,27 +31,19 @@ YOUTUBE_API_KEYS = [
 ]
 
 INVIDIOUS_INSTANCES = [
-    "https://yt.omada.cafe",
-    "https://invidious.lunivers.trade",
-    "https://invidious.ritoge.com",
-    "https://super8.absturztau.be",
-    "https://invidious.f5.si",
-    "https://lekker.gay",
-    "https://iv.melmac.space",
-    "https://invidious.vern.cc",
-    "https://yt.vern.cc",
-    "https://inv.kamuridesu.com",
-    "https://inv.thepixora.com",
-    "https://invidious.tiekoetter.com",
-    "https://youtube.mosesmang.com",
-    "https://invidious.ducks.party",
-    "https://inv.zoomerville.com",
-    "https://invidious.materialio.us",
     "https://inv.nadeko.net",
-    "https://yt.thechangebook.org",
-    "https://y.com.sb",
-    "https://invidious.reallyaweso.me",
-    "https://invidious.dhusch.de"
+    "https://yewtu.be",
+    "https://invidious.privacyredirect.com",
+    "https://inv.riverside.rocks",
+    "https://invidious.slipfox.xyz",
+    "https://iv.melmac.space",
+    "https://invidious.esmailelbob.xyz",
+    "https://invidious.epicsite.xyz",
+    "https://invidious.protokolla.info",
+    "https://inv.vern.cc",
+    "https://yt.artemislena.eu",
+    "https://invidious.flokinet.to",
+    "https://inv.tux.pizza"
 ]
 
 def get_proxy_thumbnail(video_id, proxy_type="wsrv.nl"):
@@ -549,19 +541,21 @@ def invidious_stream(video_id):
                     'hls': {}
                 }
 
+                # Handle formatStreams (MP4 with audio)
                 for fmt in data.get('formatStreams', []):
                     quality = fmt.get('qualityLabel', '')
                     url_key = fmt.get('url', '')
                     codec = fmt.get('codec', '')
 
-                    if 'mp4' in codec.lower() and url_key:
-                        video_formats['mp4'][
-                            quality.split(' ')[0] + ' (MP4)'
-                        ] = url_key
+                    if url_key and codec and 'mp4' in codec.lower():
+                        quality_label = quality.split(' ')[0] if quality else 'unknown'
+                        video_formats['mp4'][f"{quality_label} (MP4)"] = url_key
 
+                # Handle HLS
                 if data.get('hlsUrl'):
                     video_formats['hls']['HLS'] = data.get('hlsUrl')
 
+                # Handle adaptiveFormats (video-only and audio-only)
                 for fmt in data.get('adaptiveFormats', []):
                     url_key = fmt.get('url', '')
                     codec = fmt.get('codec', '')
@@ -573,46 +567,45 @@ def invidious_stream(video_id):
 
                     codec_lower = codec.lower()
                     
-                    # Video formats: check for video codecs (vp9, vp8, av1, h264, h265, etc.)
-                    # These are in adaptiveFormats without audio
-                    if any(vc in codec_lower for vc in ['vp9', 'vp8', 'av1', 'h264', 'h265', 'avc']):
+                    # Detect video-only streams
+                    if any(vc in codec_lower for vc in ['vp9', 'vp8', 'av1', 'h264', 'h265', 'avc1']):
                         if quality:
                             q = quality.split(' ')[0]
                         else:
                             q = 'unknown'
-                        quality_label = f"{q} (WebM)" if any(x in codec_lower for x in ['vp9', 'vp8', 'av1']) else f"{q} (H.264)"
+                        codec_label = 'WebM' if any(x in codec_lower for x in ['vp9', 'vp8', 'av1']) else 'H.264'
+                        quality_label = f"{q} ({codec_label})"
                         video_formats['video'][quality_label] = url_key
-                        logger.info(f"Added video format: {quality_label} from {instance}")
                     
-                    # Audio formats: check for audio codecs (opus, aac, flac, vorbis, etc.)
-                    elif any(ac in codec_lower for ac in ['opus', 'aac', 'flac', 'vorbis', 'mp3']):
-                        # Determine codec name from format
-                        if 'opus' in codec_lower:
-                            codec_name = 'WebM'
-                            quality_label = f"{bitrate} kbps (OPUS)"
-                        elif 'aac' in codec_lower:
-                            codec_name = 'M4A'
-                            quality_label = f"{bitrate} kbps (AAC)"
-                        elif 'vorbis' in codec_lower:
-                            codec_name = 'WebM'
-                            quality_label = f"{bitrate} kbps (Vorbis)"
+                    # Detect audio-only streams
+                    elif any(ac in codec_lower for ac in ['opus', 'aac', 'mp4a', 'vorbis', 'mp3']):
+                        if bitrate:
+                            br = str(bitrate).split('.')[0]
                         else:
-                            codec_name = codec.upper()
-                            quality_label = f"{bitrate} kbps ({codec_name})"
+                            br = 'unknown'
+                        
+                        if 'opus' in codec_lower:
+                            quality_label = f"{br} kbps (Opus)"
+                        elif 'aac' in codec_lower or 'mp4a' in codec_lower:
+                            quality_label = f"{br} kbps (AAC)"
+                        elif 'vorbis' in codec_lower:
+                            quality_label = f"{br} kbps (Vorbis)"
+                        else:
+                            quality_label = f"{br} kbps ({codec})"
                         
                         video_formats['audio'][quality_label] = url_key
-                        logger.info(f"Added audio format: {quality_label} from {instance}")
 
-                if video_formats['mp4'] or video_formats['video'] or video_formats['audio'] or video_formats['hls']:
-                    logger.info(f"Successfully fetched formats from {instance}: MP4={len(video_formats['mp4'])}, Video={len(video_formats['video'])}, Audio={len(video_formats['audio'])}, HLS={len(video_formats['hls'])}")
-                
-                return video_formats
+                # Only return if we have at least some formats
+                if any([video_formats['mp4'], video_formats['video'], video_formats['audio'], video_formats['hls']]):
+                    logger.info(f"Success from {instance}: MP4={len(video_formats['mp4'])}, Video={len(video_formats['video'])}, Audio={len(video_formats['audio'])}")
+                    return video_formats
+                    
         except requests.Timeout:
-            logger.warning(f"Timeout fetching from {instance} for video {video_id}")
-        except requests.ConnectionError as e:
-            logger.warning(f"Connection error with {instance}: {e}")
+            logger.warning(f"Timeout: {instance}")
+        except requests.ConnectionError:
+            logger.warning(f"Connection error: {instance}")
         except Exception as e:
-            logger.warning(f"Error fetching from {instance}: {e}")
+            logger.debug(f"Error from {instance}: {str(e)[:50]}")
         return None
 
     with ThreadPoolExecutor(max_workers=len(INVIDIOUS_INSTANCES)) as executor:
