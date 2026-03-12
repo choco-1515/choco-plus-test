@@ -448,6 +448,81 @@ def fetch_stream_from_api(api_url, video_id):
     return None
 
 
+@app.route('/api/invidious-stream/<video_id>')
+def invidious_stream(video_id):
+    """全Invidiousインスタンスに並行リクエストして最速レスポンスの動画フォーマットを返す"""
+    formats = {'mp4': {}, 'video': {}, 'audio': {}, 'hls': {}}
+
+    def fetch_from_instance(instance):
+        try:
+            response = requests.get(
+                f"{instance}/api/v1/videos/{video_id}",
+                timeout=10
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            result = {'mp4': {}, 'video': {}, 'audio': {}, 'hls': {}}
+
+            for fmt in data.get('formatStreams', []):
+                quality = fmt.get('qualityLabel', '')
+                url = fmt.get('url', '')
+                codec = fmt.get('codec', '')
+                if url and codec and 'mp4' in codec.lower():
+                    label = quality.split(' ')[0] if quality else 'unknown'
+                    result['mp4'][f"{label} (MP4)"] = url
+
+            if data.get('hlsUrl'):
+                result['hls']['HLS'] = data['hlsUrl']
+
+            for fmt in data.get('adaptiveFormats', []):
+                url = fmt.get('url', '')
+                codec = fmt.get('codec', '')
+                quality = fmt.get('qualityLabel', '')
+                bitrate = fmt.get('bitrate', '')
+                if not url or not codec:
+                    continue
+                codec_lower = codec.lower()
+                if any(vc in codec_lower for vc in ['vp9', 'vp8', 'av1', 'h264', 'h265', 'avc1']):
+                    q = quality.split(' ')[0] if quality else 'unknown'
+                    codec_label = 'WebM' if any(x in codec_lower for x in ['vp9', 'vp8', 'av1']) else 'H.264'
+                    result['video'][f"{q} ({codec_label})"] = url
+                elif any(ac in codec_lower for ac in ['opus', 'aac', 'mp4a', 'vorbis', 'mp3']):
+                    br = str(bitrate).split('.')[0] if bitrate else 'unknown'
+                    if 'opus' in codec_lower:
+                        label = f"{br} kbps (Opus)"
+                    elif 'aac' in codec_lower or 'mp4a' in codec_lower:
+                        label = f"{br} kbps (AAC)"
+                    elif 'vorbis' in codec_lower:
+                        label = f"{br} kbps (Vorbis)"
+                    else:
+                        label = f"{br} kbps ({codec})"
+                    result['audio'][label] = url
+
+            if any(result.values()):
+                return result
+        except Exception as e:
+            logger.debug(f"Invidious stream error ({instance}): {e}")
+        return None
+
+    instances = INVIDIOUS_INSTANCES.copy()
+    random.shuffle(instances)
+    with ThreadPoolExecutor(max_workers=len(instances)) as executor:
+        futures = {executor.submit(fetch_from_instance, inst): inst for inst in instances}
+        for future in as_completed(futures, timeout=10):
+            try:
+                result = future.result(timeout=1)
+                if result and any(result.values()):
+                    formats = result
+                    break
+            except Exception:
+                continue
+
+    if any(formats.values()):
+        return jsonify({'success': True, 'formats': formats})
+    return jsonify({'success': False, 'error': 'ストリームの取得に失敗しました'}), 503
+
+
 @app.route('/api/stream/<video_id>')
 def get_stream(video_id):
     """Fetch stream URL from multiple APIs in parallel"""
