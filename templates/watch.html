@@ -538,7 +538,7 @@
                     resolved = true;
                     resolve(ytRestricted ? { youtube_restricted: true } : null);
                 }
-            }, 8000);
+            }, 10000);
         });
     }
 
@@ -597,7 +597,7 @@
             });
     }
 
-    // ---- Invidious ストリーム（バックエンド → クライアントサイドフォールバック） ----
+    // ---- Invidious ストリーム（バックエンドとクライアントサイドを同時並行で実行）----
     function loadInvidiousStream() {
         if (invidiousStreams) {
             renderQualityOptions();
@@ -605,60 +605,53 @@
             return;
         }
         const seq = ++fetchSeq;
-        showLoading();
+        showLoading('Invidiousストリームを取得中...');
 
-        fetch('/api/invidious-stream/' + videoId)
+        // バックエンドAPIリクエストをPromiseでラップ
+        const backendPromise = fetch('/api/invidious-stream/' + videoId)
             .then(async r => {
                 const data = await r.json();
-                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-
-                if (data.success && data.streams && data.streams.length > 0) {
-                    // バックエンド成功
-                    invidiousStreams = data.streams;
-                    currentQualityFilter = 'mp4';
-                    updateQualityTabs('mp4');
-                    renderQualityOptions();
-                    playFirstAvailable();
-                } else if (data.error === 'youtube_restricted') {
-                    // YouTube制限エラー → クライアント側でも無理なので即エラー表示
-                    showError(data.message || 'この動画はYouTubeの制限により再生できません');
-                } else {
-                    // インスタンス障害 → クライアントサイドレースにフォールバック
-                    console.log('[Invidious] Backend unavailable, trying client-side race...');
-                    showLoading('クライアント側でストリームを取得中...');
-                    const result = await clientSideInvidiousRace();
-                    if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                    if (result && result.youtube_restricted) {
-                        showError('この動画はYouTubeの制限により再生できません（年齢制限・地域制限など）');
-                    } else if (result && result.streams && result.streams.length > 0) {
-                        invidiousStreams = result.streams;
-                        currentQualityFilter = 'mp4';
-                        updateQualityTabs('mp4');
-                        renderQualityOptions();
-                        playFirstAvailable();
-                    } else {
-                        showError('ストリームの取得に失敗しました。再読み込みしてください');
-                    }
-                }
+                if (data.error === 'youtube_restricted') return { youtube_restricted: true };
+                if (data.success && data.streams && data.streams.length > 0) return data;
+                return null;
             })
-            .catch(async () => {
+            .catch(() => null);
+
+        // クライアントサイドレースをPromiseでラップ
+        const clientPromise = clientSideInvidiousRace();
+
+        // 両者を並行実行 - 先に成功した方を使用
+        let resolved = false;
+        const applyResult = (result, source) => {
+            if (resolved) return;
+            if (seq !== fetchSeq || currentStreamType !== 'invidious') { resolved = true; return; }
+            if (result && result.youtube_restricted) {
+                resolved = true;
+                showError('この動画はYouTubeの制限により再生できません（年齢制限・地域制限など）');
+                return;
+            }
+            if (result && result.streams && result.streams.length > 0) {
+                resolved = true;
+                console.log(`[Invidious] Got streams from ${source}`);
+                invidiousStreams = result.streams;
+                currentQualityFilter = 'mp4';
+                updateQualityTabs('mp4');
+                renderQualityOptions();
+                playFirstAvailable();
+            }
+        };
+
+        backendPromise.then(r => applyResult(r, 'backend'));
+        clientPromise.then(r => applyResult(r, 'client'));
+
+        // 両方完了してもまだ resolved でなければエラー
+        Promise.all([backendPromise, clientPromise]).then(() => {
+            if (!resolved) {
+                resolved = true;
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                console.log('[Invidious] Backend error, trying client-side race...');
-                showLoading('クライアント側でストリームを取得中...');
-                const result = await clientSideInvidiousRace();
-                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                if (result && result.youtube_restricted) {
-                    showError('この動画はYouTubeの制限により再生できません（年齢制限・地域制限など）');
-                } else if (result && result.streams && result.streams.length > 0) {
-                    invidiousStreams = result.streams;
-                    currentQualityFilter = 'mp4';
-                    updateQualityTabs('mp4');
-                    renderQualityOptions();
-                    playFirstAvailable();
-                } else {
-                    showError('ストリームの取得に失敗しました。再読み込みしてください');
-                }
-            });
+                showError('ストリームの取得に失敗しました。再読み込みしてください');
+            }
+        });
     }
 
     // ---- 画質フィルタ切り替え ----
