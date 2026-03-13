@@ -31,41 +31,44 @@ YOUTUBE_API_KEYS = [
 ]
 
 INVIDIOUS_INSTANCES = [
-    "https://app.materialio.us",
-    "https://inv.kamuridesu.com",
+    "https://invidious.darkness.services",
+    "https://invidious.lol",
+    "https://invidious.st",
+    "https://inv.in.projectsegfau.lt",
+    "https://invidious.twigotech.eu",
+    "https://invidious.mint.lgbt",
+    "https://invidious.einfachzocken.eu",
+    "https://invidious.sethforprivacy.com",
+    "https://invidious.reallyaweso.me",
+    "https://invidious.asir.dev",
     "https://inv.nadeko.net",
-    "https://inv1.nadeko.net",
-    "https://inv2.nadeko.net",
-    "https://inv3.nadeko.net",
-    "https://invidious.f5.si",
-    "https://invidious.nerdvpn.de",
-    "https://invidious.projectsegfau.lt",
-    "https://invidious.protokolla.fi",
-    "https://invidious.tiekoetter.com",
-    "https://lekker.gay",
-    "https://nyc1.iv.ggtyler.dev",
-    "https://y.com.sb",
-    "https://yewtu.be",
-    "https://yt.thechangebook.org",
-    "https://yt.vern.cc",
-]
-
-INVIDIOUS_STREAM_INSTANCES = [
-    "https://inv.vern.cc",
-    "https://invidious.fdn.fr",
-    "https://iv.ggtyler.dev",
-    "https://invidious.lunar.icu",
-    "https://yt.artemislena.eu",
-    "https://invidious.privacydev.net",
-    "https://invidious.drgns.space",
-    "https://inv.n8pjl.ca",
     "https://yewtu.be",
     "https://invidious.nerdvpn.de",
     "https://inv.riverside.rocks",
-    "https://invidious.slipfox.xyz",
-    "https://invidious.esmailelbob.xyz",
-    "https://invidious.projectsegfau.lt",
 ]
+
+INVIDIOUS_STREAM_INSTANCES = [
+    "https://invidious.darkness.services",
+    "https://invidious.lol",
+    "https://inv.in.projectsegfau.lt",
+    "https://invidious.twigotech.eu",
+    "https://invidious.st",
+    "https://invidious.mint.lgbt",
+    "https://invidious.io",
+    "https://inv.stacher.io",
+    "https://i.owo.si",
+    "https://invidious.namazso.eu",
+    "https://invidious.reallyaweso.me",
+    "https://invidious.asir.dev",
+    "https://invidious.sethforprivacy.com",
+    "https://invidious.einfachzocken.eu",
+]
+
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 def get_proxy_thumbnail(video_id, proxy_type="wsrv.nl"):
     if proxy_type == "i.ytimg.com":
@@ -84,7 +87,7 @@ def search_invidious(query, page=1, proxy_type="img.youtube.com", search_type="v
     for instance in instances:
         url = f"{instance}/api/v1/search?q={query}&type={search_type}&page={page}"
         try:
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, timeout=5, headers=BROWSER_HEADERS, allow_redirects=True)
             if response.status_code == 200:
                 data = response.json()
                 results = []
@@ -478,7 +481,7 @@ def invidious_stream(video_id):
     def fetch_from_instance(instance):
         try:
             url = f"{instance}/api/v1/videos/{video_id}"
-            response = requests.get(url, timeout=5, headers={"Accept": "application/json"})
+            response = requests.get(url, timeout=5, headers=BROWSER_HEADERS, allow_redirects=True)
             if response.status_code != 200:
                 return None
 
@@ -523,15 +526,30 @@ def invidious_stream(video_id):
 
             for fmt in data.get('adaptiveFormats', []):
                 url = fmt.get('url', '')
-                codec = fmt.get('codec', '')
-                if not url or not codec:
+                if not url:
                     continue
+                # codec フィールドが空の場合、type (MIMEタイプ) と encoding から判定する
+                codec = fmt.get('codec', '') or fmt.get('encoding', '')
+                mime_type = fmt.get('type', '')
+                # type フィールドからコーデック文字列を補完
+                if not codec and mime_type:
+                    codec = mime_type
                 codec_lower = codec.lower()
+                mime_lower = mime_type.lower()
                 quality = fmt.get('qualityLabel') or fmt.get('quality') or ''
                 bitrate = fmt.get('bitrate', '')
                 container = fmt.get('container', 'mp4')
-                if any(vc in codec_lower for vc in ['vp9', 'vp8', 'av1', 'h264', 'h265', 'avc1']):
-                    codec_label = 'WebM' if any(x in codec_lower for x in ['vp9', 'vp8', 'av1']) else 'H.264'
+
+                is_video_mime = mime_lower.startswith('video/')
+                is_audio_mime = mime_lower.startswith('audio/')
+
+                if is_video_mime or any(vc in codec_lower for vc in ['vp9', 'vp8', 'av1', 'h264', 'h265', 'avc1']):
+                    if any(x in codec_lower for x in ['vp9', 'vp8', 'av1', 'vp09']):
+                        codec_label = 'WebM'
+                        container = container or 'webm'
+                    else:
+                        codec_label = 'H.264'
+                        container = container or 'mp4'
                     q = quality.split(' ')[0] if quality else 'unknown'
                     streams.append({
                         'url': url,
@@ -543,8 +561,9 @@ def invidious_stream(video_id):
                         'isHLS': False,
                         'isLive': False,
                     })
-                elif any(ac in codec_lower for ac in ['opus', 'aac', 'mp4a', 'vorbis', 'mp3']):
-                    br = str(bitrate).split('.')[0] if bitrate else 'unknown'
+                elif is_audio_mime or any(ac in codec_lower for ac in ['opus', 'aac', 'mp4a', 'vorbis', 'mp3']):
+                    br_raw = int(str(bitrate).split('.')[0]) if bitrate else 0
+                    br = f"{round(br_raw / 1000)}" if br_raw > 1000 else str(br_raw)
                     if 'opus' in codec_lower:
                         label = f"{br} kbps (Opus)"
                     elif 'aac' in codec_lower or 'mp4a' in codec_lower:
@@ -552,7 +571,8 @@ def invidious_stream(video_id):
                     elif 'vorbis' in codec_lower:
                         label = f"{br} kbps (Vorbis)"
                     else:
-                        label = f"{br} kbps ({codec})"
+                        enc = fmt.get('encoding', 'audio')
+                        label = f"{br} kbps ({enc.upper() if enc else 'Audio'})"
                     streams.append({
                         'url': url,
                         'quality': label,
