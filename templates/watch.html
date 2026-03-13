@@ -628,11 +628,17 @@
             retryCount++;
             console.warn(`再生エラー。リトライ中... (${retryCount}/${MAX_RETRY})`);
 
-            setTimeout(() => {
-                if (!playerContainer.contains(mediaEl)) return;
+            mediaEl.removeEventListener('error', onError);
+            mediaEl.removeEventListener('loadedmetadata', onLoaded);
 
-                mediaEl.removeEventListener('error', onError);
-                mediaEl.removeEventListener('loadedmetadata', onLoaded);
+            playerContainer.innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p style="color:#e88;font-size:14px;">読み込みエラー発生 — 再読み込み中... (${retryCount}/${MAX_RETRY})</p>
+                </div>`;
+
+            setTimeout(() => {
+                if (playerContainer.querySelector('.loading-spinner') === null) return;
 
                 mediaEl = rebuildFn();
                 if (mediaEl) {
