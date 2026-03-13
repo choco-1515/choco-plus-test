@@ -472,25 +472,38 @@ def fetch_stream_from_api(api_url, video_id):
     return None
 
 
+_invidious_working_cache = []  # 動作済みインスタンスのメモリキャッシュ
+
 @app.route('/api/invidious-stream/<video_id>')
 def invidious_stream(video_id):
     """Wista方式: 全ストリーム専用インスタンスに並行レースリクエストして最速レスポンスのストリームを返す"""
-    ERROR_KEYWORDS = ["shutdown", "blocked", "Forbidden", "<!DOCTYPE", "<html", "Rate limit",
-                      "not found", "temporarily unavailable", "maintenance"]
+    global _invidious_working_cache
+    ERROR_KEYWORDS = ["shutdown", "<!DOCTYPE", "<html", "temporarily unavailable", "maintenance"]
+    YOUTUBE_RESTRICT_KEYWORDS = ["protect our community", "Sign in to confirm", "age-restricted",
+                                  "This video is unavailable", "not available in your country"]
 
     def fetch_from_instance(instance):
         try:
             url = f"{instance}/api/v1/videos/{video_id}"
             response = requests.get(url, timeout=5, headers=BROWSER_HEADERS, allow_redirects=True)
-            if response.status_code != 200:
+            if response.status_code not in (200, 500):
                 return None
 
             text = response.text
             if any(kw.lower() in text.lower() for kw in ERROR_KEYWORDS):
                 return None
 
+            # YouTube制限エラーを検出して専用マーカーで返す
+            if any(kw.lower() in text.lower() for kw in YOUTUBE_RESTRICT_KEYWORDS):
+                return {'youtube_restricted': True}
+
             data = response.json()
             if not data.get('title'):
+                # Invidious が error フィールドを返している場合
+                if data.get('error'):
+                    err = data['error']
+                    if any(kw.lower() in err.lower() for kw in YOUTUBE_RESTRICT_KEYWORDS):
+                        return {'youtube_restricted': True}
                 return None
 
             streams = []
@@ -597,20 +610,33 @@ def invidious_stream(video_id):
             logger.debug(f"Invidious stream error ({instance}): {e}")
         return None
 
-    instances = INVIDIOUS_STREAM_INSTANCES.copy()
-    random.shuffle(instances)
+    # 動作済みキャッシュを優先、残りをランダム順で追加
+    cached = [i for i in _invidious_working_cache if i in INVIDIOUS_STREAM_INSTANCES]
+    rest = [i for i in INVIDIOUS_STREAM_INSTANCES if i not in cached]
+    random.shuffle(rest)
+    instances = cached + rest
 
     result = None
+    youtube_restricted = False
     with ThreadPoolExecutor(max_workers=len(instances)) as executor:
         futures = {executor.submit(fetch_from_instance, inst): inst for inst in instances}
         try:
             for future in as_completed(futures, timeout=8):
                 try:
                     res = future.result(timeout=1)
-                    if res and res.get('streams'):
-                        result = res
-                        logger.info(f"[Invidious] Success from {res['instance']}")
-                        break
+                    if res:
+                        if res.get('youtube_restricted'):
+                            youtube_restricted = True
+                            continue
+                        if res.get('streams'):
+                            result = res
+                            # 動作インスタンスをキャッシュに追加
+                            inst_url = res['instance']
+                            if inst_url not in _invidious_working_cache:
+                                _invidious_working_cache.insert(0, inst_url)
+                                _invidious_working_cache[:] = _invidious_working_cache[:8]
+                            logger.info(f"[Invidious] Success from {inst_url}")
+                            break
                 except Exception:
                     continue
         except TimeoutError:
@@ -625,7 +651,13 @@ def invidious_stream(video_id):
             'title': result.get('title', ''),
             'author': result.get('author', ''),
         })
-    return jsonify({'success': False, 'error': 'ストリームの取得に失敗しました'}), 503
+
+    if youtube_restricted:
+        return jsonify({'success': False, 'error': 'youtube_restricted',
+                        'message': 'この動画はYouTubeの制限により再生できません（年齢制限・地域制限など）'}), 403
+
+    return jsonify({'success': False, 'error': 'instance_unavailable',
+                    'message': 'ストリームの取得に失敗しました。クライアント側で再試行します...'}), 503
 
 
 @app.route('/api/stream/<video_id>')
