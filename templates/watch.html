@@ -383,51 +383,96 @@
 
     // ---- Wista方式: クライアントサイドInvidiousフォールバック設定 ----
     const INV_STREAM_INSTANCES = [
-        "https://invidious.darkness.services",
-        "https://yewtu.be",
+        "https://app.materialio.us",
+        "https://inv.kamuridesu.com",
         "https://inv.nadeko.net",
-        "https://invidious.privacyredirect.com",
         "https://inv.vern.cc",
+        "https://inv1.nadeko.net",
+        "https://inv2.nadeko.net",
+        "https://inv3.nadeko.net",
+        "https://inv4.nadeko.net",
+        "https://inv5.nadeko.net",
+        "https://inv6.nadeko.net",
+        "https://inv7.nadeko.net",
+        "https://inv8.nadeko.net",
+        "https://inv9.nadeko.net",
+        "https://invidious.f5.si",
+        "https://invidious.lunivers.trade",
+        "https://invidious.nerdvpn.de",
+        "https://invidious.nietzospannend.nl",
+        "https://invidious.projektegfau.lt",
+        "https://invidious.protokolla.fi",
+        "https://invidious.tiekoetter.com",
+        "https://lekker.gay",
+        "https://nyc1.iv.ggtyler.dev",
+        "https://rust.oskamp.nl",
+        "https://y.com.sb",
+        "https://yewtu.be",
+        "https://yt.thechangebook.org",
+        "https://yt.vern.cc",
+        "https://invidious.darkness.services",
+        "https://invidious.privacyredirect.com",
         "https://invidious.fdn.fr",
         "https://iv.ggtyler.dev",
         "https://invidious.lunar.icu",
         "https://yt.artemislena.eu",
-        "https://invidious.privacydev.net",
-        "https://inv.n8pjl.ca",
-        "https://invidious.nerdvpn.de",
-        "https://inv.riverside.rocks",
-        "https://invidious.esmailelbob.xyz",
-        "https://invidious.perennialte.ch",
         "https://invidious.flokinet.to",
-        "https://invidious.protokolla.fi",
-        "https://inv.riverside.rocks",
-        "https://yt.vern.cc",
-        "https://nyc1.iv.ggtyler.dev",
-        "https://y.com.sb",
-        "https://lekker.gay",
         "https://invidious.sethforprivacy.com",
-        "https://invidious.f5.si",
     ];
-    const CORS_PROXIES = [
-        "https://corsproxy.io/?url=",
+    const CORS_PROXIES_STATIC = [
         "https://api.allorigins.win/raw?url=",
         "https://api.codetabs.com/v1/proxy?quest=",
+        "https://thingproxy.freeboard.io/fetch/",
+        "https://corsproxy.io/?url=",
+        "https://cors.lol/?url=",
+        "https://yacdn.org/proxy/",
+        "https://cors.wtf/?url=",
+        "https://corsproxy.rocks/?url=",
+        "https://cors.hyoo.ru/?url=",
+        "https://cors.miaouf.com/?url=",
+        "https://cors.x2u.in/",
+        "https://cors-proxy.htmldriven.com/?url=",
     ];
-    const ERROR_KEYWORDS = ["shutdown", "<!DOCTYPE", "<html", "temporarily unavailable", "maintenance"];
+    const CORS_PROXY_GITHUB_URL = "https://raw.githubusercontent.com/woolisbest/crosproxy-list/refs/heads/main/main.txt";
+    const CORS_PROXY_CACHE_KEY = "inv_cors_proxies_github";
+    const CORS_PROXY_CACHE_TS_KEY = "inv_cors_proxies_ts";
+    const ERROR_KEYWORDS = ["shutdown", "blocked", "Forbidden", "<!DOCTYPE", "<html", "Rate limit", "not found", "temporarily unavailable", "maintenance"];
     const INV_WORKING_KEY = "invidious_working_instances";
+    const INV_BATCH_SIZE = 6;
+    const INV_REQ_TIMEOUT = 2000;
 
-    function loadWorkingInstances() {
-        try { return JSON.parse(localStorage.getItem(INV_WORKING_KEY) || "[]"); } catch { return []; }
-    }
+    // ---- Wista方式インスタンス管理 ----
+    let _workingInstances = (() => { try { return JSON.parse(localStorage.getItem(INV_WORKING_KEY) || "[]"); } catch { return []; } })();
     function saveWorkingInstance(instance) {
-        try {
-            let list = loadWorkingInstances().filter(i => i !== instance);
-            list.unshift(instance);
-            localStorage.setItem(INV_WORKING_KEY, JSON.stringify(list.slice(0, 8)));
-        } catch {}
+        _workingInstances = [instance, ..._workingInstances.filter(i => i !== instance)].slice(0, 8);
+        try { localStorage.setItem(INV_WORKING_KEY, JSON.stringify(_workingInstances)); } catch {}
     }
 
-    // タイムアウト付きfetch
+    // ---- CORSプロキシ管理（GitHubリストを動的取得）----
+    let _githubProxies = (() => { try { return JSON.parse(localStorage.getItem(CORS_PROXY_CACHE_KEY) || "[]"); } catch { return []; } })();
+    let _githubProxiesFetched = false;
+    async function fetchGithubProxies() {
+        if (_githubProxiesFetched) return _githubProxies;
+        _githubProxiesFetched = true;
+        try {
+            const res = await fetch(CORS_PROXY_GITHUB_URL, { signal: AbortSignal.timeout(5000) });
+            if (res.ok) {
+                const text = await res.text();
+                const proxies = text.split('\n').map(l => l.trim()).filter(l =>
+                    l && !l.startsWith('#') && !l.startsWith('//') &&
+                    (l.startsWith('http://') || l.startsWith('https://'))
+                ).map(l => l.endsWith('/') ? l : l + '/');
+                if (proxies.length > 0) {
+                    _githubProxies = proxies;
+                    try { localStorage.setItem(CORS_PROXY_CACHE_KEY, JSON.stringify(proxies)); } catch {}
+                    console.log(`[CORSProxy] Loaded ${proxies.length} proxies from GitHub`);
+                }
+            }
+        } catch(e) { console.log('[CORSProxy] GitHub fetch failed:', e); }
+        return _githubProxies;
+    }
+
+    // ---- タイムアウト付きfetch ----
     async function fetchWithTimeout(url, ms) {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), ms);
@@ -438,96 +483,102 @@
         } catch(e) { clearTimeout(timer); throw e; }
     }
 
-    // 1インスタンスに対して直接→CORSプロキシの順でストリームを取得
-    async function fetchInvidiousFromInstance(instance) {
-        const apiUrl = `${instance}/api/v1/videos/${videoId}`;
-        const attempts = ["", ...CORS_PROXIES];
-        for (const proxy of attempts) {
-            try {
-                const reqUrl = proxy ? `${proxy}${encodeURIComponent(apiUrl)}` : apiUrl;
-                const res = await fetchWithTimeout(reqUrl, 5000);
-                if (!res.ok) continue;
-                const text = await res.text();
-                if (ERROR_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) continue;
-                const json = JSON.parse(text);
-                if (!json.title) continue;
-
-                const streams = [];
-                if (json.hlsUrl) {
-                    streams.push({ url: json.hlsUrl, quality: 'Auto (HLS)', format: 'hls', container: 'm3u8', hasAudio: true, hasVideo: true, isHLS: true, isLive: !!json.liveNow });
-                }
-                for (const fmt of (json.formatStreams || [])) {
-                    if (!fmt.url) continue;
-                    const quality = fmt.qualityLabel || fmt.quality || 'Unknown';
-                    const container = fmt.container || 'mp4';
-                    streams.push({ url: fmt.url, quality, format: 'mp4', container, hasAudio: true, hasVideo: true, isHLS: false, isLive: false });
-                }
-                for (const fmt of (json.adaptiveFormats || [])) {
-                    if (!fmt.url) continue;
-                    // codec フィールドが空の場合、type (MIMEタイプ) と encoding から判定
-                    const codecRaw = fmt.codec || fmt.encoding || fmt.type || '';
-                    const mimeType = (fmt.type || '').toLowerCase();
-                    const codec = codecRaw.toLowerCase();
-                    const quality = fmt.qualityLabel || fmt.quality || '';
-                    const bitrate = fmt.bitrate || '';
-                    const container = fmt.container || 'mp4';
-                    const isVideoMime = mimeType.startsWith('video/');
-                    const isAudioMime = mimeType.startsWith('audio/');
-                    if (isVideoMime || ['vp9','vp8','av1','vp09','h264','h265','avc1'].some(v => codec.includes(v))) {
-                        const codecLabel = ['vp9','vp8','av1','vp09'].some(v => codec.includes(v)) ? 'WebM' : 'H.264';
-                        const q = (quality.split(' ')[0]) || 'unknown';
-                        streams.push({ url: fmt.url, quality: `${q} (${codecLabel})`, format: 'video', container, hasAudio: false, hasVideo: true, isHLS: false, isLive: false });
-                    } else if (isAudioMime || ['opus','aac','mp4a','vorbis','mp3'].some(a => codec.includes(a))) {
-                        const brRaw = parseInt(String(bitrate).split('.')[0]) || 0;
-                        const br = brRaw > 1000 ? Math.round(brRaw / 1000) : brRaw;
-                        let label;
-                        if (codec.includes('opus')) label = `${br} kbps (Opus)`;
-                        else if (codec.includes('aac') || codec.includes('mp4a')) label = `${br} kbps (AAC)`;
-                        else if (codec.includes('vorbis')) label = `${br} kbps (Vorbis)`;
-                        else { const enc = fmt.encoding || 'Audio'; label = `${br} kbps (${enc.toUpperCase()})`; }
-                        streams.push({ url: fmt.url, quality: label, format: 'audio', container, hasAudio: true, hasVideo: false, isHLS: false, isLive: false });
-                    }
-                }
-                if (streams.length > 0) {
-                    saveWorkingInstance(instance);
-                    return { streams, hlsUrl: json.hlsUrl, isLive: !!json.liveNow, title: json.title, author: json.author };
-                }
-            } catch { continue; }
+    // ---- Invidiousレスポンスをストリームリストに変換 ----
+    function parseInvidiousStreams(json) {
+        const streams = [];
+        if (json.hlsUrl) {
+            streams.push({ url: json.hlsUrl, quality: 'Auto (HLS)', format: 'hls', container: 'm3u8', hasAudio: true, hasVideo: true, isHLS: true, isLive: !!json.liveNow });
         }
-        return null;
+        for (const fmt of (json.formatStreams || [])) {
+            if (!fmt.url) continue;
+            streams.push({ url: fmt.url, quality: fmt.qualityLabel || fmt.quality || 'Unknown', format: 'mp4', container: fmt.container || 'mp4', hasAudio: true, hasVideo: true, isHLS: false, isLive: false });
+        }
+        for (const fmt of (json.adaptiveFormats || [])) {
+            if (!fmt.url) continue;
+            const codecRaw = fmt.codec || fmt.encoding || fmt.type || '';
+            const mimeType = (fmt.type || '').toLowerCase();
+            const codec = codecRaw.toLowerCase();
+            const quality = fmt.qualityLabel || fmt.quality || '';
+            const bitrate = fmt.bitrate || '';
+            const container = fmt.container || 'mp4';
+            const isVideoMime = mimeType.startsWith('video/');
+            const isAudioMime = mimeType.startsWith('audio/');
+            if (isVideoMime || ['vp9','vp8','av1','vp09','h264','h265','avc1'].some(v => codec.includes(v))) {
+                const codecLabel = ['vp9','vp8','av1','vp09'].some(v => codec.includes(v)) ? 'WebM' : 'H.264';
+                streams.push({ url: fmt.url, quality: `${(quality.split(' ')[0])||'unknown'} (${codecLabel})`, format: 'video', container, hasAudio: false, hasVideo: true, isHLS: false, isLive: false });
+            } else if (isAudioMime || ['opus','aac','mp4a','vorbis','mp3'].some(a => codec.includes(a))) {
+                const brRaw = parseInt(String(bitrate).split('.')[0]) || 0;
+                const br = brRaw > 1000 ? Math.round(brRaw / 1000) : brRaw;
+                let label = codec.includes('opus') ? `${br} kbps (Opus)` : codec.includes('aac') || codec.includes('mp4a') ? `${br} kbps (AAC)` : codec.includes('vorbis') ? `${br} kbps (Vorbis)` : `${br} kbps (${(fmt.encoding||'Audio').toUpperCase()})`;
+                streams.push({ url: fmt.url, quality: label, format: 'audio', container, hasAudio: true, hasVideo: false, isHLS: false, isLive: false });
+            }
+        }
+        return streams;
     }
 
-    // 並列レース型: 最初に成功したインスタンスのストリームを返す
-    function clientSideInvidiousRace() {
-        const working = loadWorkingInstances();
-        const all = [...working, ...INV_STREAM_INSTANCES.filter(i => !working.includes(i))];
-
-        return new Promise((resolve) => {
-            let resolved = false;
-            let completed = 0;
-            const total = all.length;
-
-            const done = (result) => {
-                completed++;
-                if (!resolved) {
-                    if (result && result.streams && result.streams.length > 0) {
-                        resolved = true;
-                        resolve(result);
-                        return;
-                    }
-                    if (completed === total) {
-                        resolved = true;
-                        resolve(null);
-                    }
-                }
-            };
-
-            all.forEach(instance => fetchInvidiousFromInstance(instance).then(done).catch(() => done(null)));
-
-            setTimeout(() => {
-                if (!resolved) { resolved = true; resolve(null); }
-            }, 10000);
+    // ---- バッチ並行リクエスト（Wista方式）----
+    function fetchInvidiousBatch(instances, proxy, timeoutMs) {
+        const promises = instances.map(instance => {
+            const apiUrl = `${instance}/api/v1/videos/${videoId}`;
+            const reqUrl = proxy ? `${proxy}${encodeURIComponent(apiUrl)}` : apiUrl;
+            return fetchWithTimeout(reqUrl, timeoutMs)
+                .then(async res => {
+                    if (!res.ok) return null;
+                    const text = await res.text();
+                    if (ERROR_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) return null;
+                    const json = JSON.parse(text);
+                    if (!json || json.error || !json.title) return null;
+                    const streams = parseInvidiousStreams(json);
+                    if (!streams.length) return null;
+                    saveWorkingInstance(instance);
+                    return { streams, hlsUrl: json.hlsUrl, isLive: !!json.liveNow, title: json.title, author: json.author, instance };
+                })
+                .catch(() => null);
         });
+        return new Promise(resolve => {
+            let done = false, completed = 0;
+            promises.forEach(p => p.then(r => {
+                completed++;
+                if (!done && r) { done = true; resolve(r); return; }
+                if (completed === promises.length && !done) { done = true; resolve(null); }
+            }));
+            setTimeout(() => { if (!done) { done = true; resolve(null); } }, timeoutMs + 500);
+        });
+    }
+
+    // ---- Wista方式メインフェッチ: キャッシュ→静的プロキシバッチ→GitHubプロキシ ----
+    async function clientSideInvidiousRace() {
+        const working = _workingInstances.filter(i => INV_STREAM_INSTANCES.includes(i));
+        const rest = INV_STREAM_INSTANCES.filter(i => !working.includes(i));
+        const all = [...working, ...rest];
+
+        // ファストパス: キャッシュ済みインスタンス × 最初のプロキシ
+        if (working.length > 0 && CORS_PROXIES_STATIC.length > 0) {
+            const r = await fetchInvidiousBatch(working, CORS_PROXIES_STATIC[0], INV_REQ_TIMEOUT);
+            if (r) { console.log('[Invidious] Fast path hit:', r.instance); return r; }
+        }
+
+        // フルサーチ: 全インスタンスをバッチ分割×各静的プロキシ
+        for (const proxy of CORS_PROXIES_STATIC) {
+            for (let i = 0; i < Math.ceil(all.length / INV_BATCH_SIZE); i++) {
+                const batch = all.slice(i * INV_BATCH_SIZE, (i + 1) * INV_BATCH_SIZE);
+                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT);
+                if (r) { console.log(`[Invidious] Hit proxy="${proxy}" instance="${r.instance}"`); return r; }
+            }
+        }
+
+        // GitHubフォールバック: 動的CORSプロキシリストを取得して再試行
+        console.log('[Invidious] Static proxies exhausted, fetching GitHub proxy list...');
+        const githubProxies = await fetchGithubProxies();
+        for (const proxy of githubProxies) {
+            for (let i = 0; i < Math.ceil(all.length / INV_BATCH_SIZE); i++) {
+                const batch = all.slice(i * INV_BATCH_SIZE, (i + 1) * INV_BATCH_SIZE);
+                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT);
+                if (r) { console.log(`[Invidious] GitHub proxy hit: ${proxy}`); return r; }
+            }
+        }
+
+        return null;
     }
 
     // 初期ロード
