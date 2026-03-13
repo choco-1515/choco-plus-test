@@ -605,17 +605,33 @@
             const reqUrl = proxy ? `${proxy}${encodeURIComponent(apiUrl)}` : apiUrl;
             return fetchWithTimeout(reqUrl, timeoutMs)
                 .then(async res => {
-                    if (!res.ok) return null;
+                    if (!res.ok) {
+                        console.error(`[Fetch] NG instance="${instance}" proxy="${proxy || 'none'}" status=${res.status}`);
+                        return null;
+                    }
                     const text = await res.text();
-                    if (ERROR_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) return null;
+                    if (ERROR_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) {
+                        console.error(`[Fetch] ErrorKeyword instance="${instance}" proxy="${proxy || 'none'}"`);
+                        return null;
+                    }
                     const json = JSON.parse(text);
-                    if (!json || json.error || !json.title) return null;
+                    if (!json || json.error || !json.title) {
+                        console.error(`[Fetch] InvalidJSON instance="${instance}" proxy="${proxy || 'none'}"`);
+                        return null;
+                    }
                     const streams = parseInvidiousStreams(json);
-                    if (!streams.length) return null;
+                    if (!streams.length) {
+                        console.error(`[Fetch] NoStreams instance="${instance}" proxy="${proxy || 'none'}"`);
+                        return null;
+                    }
                     saveWorkingInstance(instance);
                     return { streams, hlsUrl: json.hlsUrl, isLive: !!json.liveNow, title: json.title, author: json.author, instance, proxy };
                 })
-                .catch(() => null);
+                .catch(err => {
+                    const reason = (err && err.message) ? err.message : String(err);
+                    console.error(`[Fetch] ERR instance="${instance}" proxy="${proxy || 'none'}" reason="${reason}"`);
+                    return null;
+                });
         });
         return new Promise(resolve => {
             let done = false, completed = 0;
