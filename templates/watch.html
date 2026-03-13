@@ -315,10 +315,10 @@
         <!-- Invidious 画質セレクタ -->
         <div class="quality-selector" id="qualitySelector">
             <div class="quality-tabs">
-                <button class="quality-tab active" onclick="switchQualityType('mp4')" id="tab-mp4">MP4</button>
-                <button class="quality-tab" onclick="switchQualityType('video')" id="tab-video">映像のみ</button>
-                <button class="quality-tab" onclick="switchQualityType('audio')" id="tab-audio">音声のみ</button>
-                <button class="quality-tab" onclick="switchQualityType('hls')" id="tab-hls">HLS</button>
+                <button class="quality-tab active" onclick="switchQualityFilter('mp4')" id="tab-mp4">MP4</button>
+                <button class="quality-tab" onclick="switchQualityFilter('video')" id="tab-video">映像のみ</button>
+                <button class="quality-tab" onclick="switchQualityFilter('audio')" id="tab-audio">音声のみ</button>
+                <button class="quality-tab" onclick="switchQualityFilter('hls')" id="tab-hls">HLS</button>
             </div>
             <div class="quality-options" id="qualityOptions"></div>
         </div>
@@ -376,10 +376,136 @@
     const playerContainer = document.getElementById('playerContainer');
 
     let currentStreamType = 'ytdlp';
-    let currentQualityType = 'mp4';
-    let invidiousFormats = null;
+    let currentQualityFilter = 'mp4';
+    let invidiousStreams = null;
     let ytdlpCachedUrl = null;
-    let fetchSeq = 0;  // リクエストごとにインクリメントして古い結果を無視する
+    let fetchSeq = 0;
+
+    // ---- Wista方式: クライアントサイドInvidiousフォールバック設定 ----
+    const INV_STREAM_INSTANCES = [
+        "https://inv.vern.cc",
+        "https://invidious.fdn.fr",
+        "https://iv.ggtyler.dev",
+        "https://invidious.lunar.icu",
+        "https://yt.artemislena.eu",
+        "https://invidious.privacydev.net",
+        "https://invidious.drgns.space",
+        "https://inv.n8pjl.ca",
+        "https://yewtu.be",
+        "https://invidious.nerdvpn.de",
+        "https://inv.riverside.rocks",
+        "https://invidious.slipfox.xyz",
+        "https://invidious.esmailelbob.xyz",
+        "https://invidious.projectsegfau.lt",
+    ];
+    const CORS_PROXIES = [
+        "https://corsproxy.io/?url=",
+        "https://api.allorigins.win/raw?url=",
+        "https://api.codetabs.com/v1/proxy?quest=",
+    ];
+    const ERROR_KEYWORDS = ["shutdown", "blocked", "Forbidden", "<!DOCTYPE", "<html", "Rate limit", "not found", "maintenance"];
+    const INV_WORKING_KEY = "invidious_working_instances";
+
+    function loadWorkingInstances() {
+        try { return JSON.parse(localStorage.getItem(INV_WORKING_KEY) || "[]"); } catch { return []; }
+    }
+    function saveWorkingInstance(instance) {
+        try {
+            let list = loadWorkingInstances().filter(i => i !== instance);
+            list.unshift(instance);
+            localStorage.setItem(INV_WORKING_KEY, JSON.stringify(list.slice(0, 8)));
+        } catch {}
+    }
+
+    // タイムアウト付きfetch
+    async function fetchWithTimeout(url, ms) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), ms);
+        try {
+            const res = await fetch(url, { signal: ctrl.signal });
+            clearTimeout(timer);
+            return res;
+        } catch(e) { clearTimeout(timer); throw e; }
+    }
+
+    // 1インスタンスに対して直接→CORSプロキシの順でストリームを取得
+    async function fetchInvidiousFromInstance(instance) {
+        const apiUrl = `${instance}/api/v1/videos/${videoId}`;
+        const attempts = ["", ...CORS_PROXIES];
+        for (const proxy of attempts) {
+            try {
+                const reqUrl = proxy ? `${proxy}${encodeURIComponent(apiUrl)}` : apiUrl;
+                const res = await fetchWithTimeout(reqUrl, 5000);
+                if (!res.ok) continue;
+                const text = await res.text();
+                if (ERROR_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) continue;
+                const json = JSON.parse(text);
+                if (!json.title) continue;
+
+                const streams = [];
+                if (json.hlsUrl) {
+                    streams.push({ url: json.hlsUrl, quality: 'Auto (HLS)', format: 'hls', container: 'm3u8', hasAudio: true, hasVideo: true, isHLS: true, isLive: !!json.liveNow });
+                }
+                for (const fmt of (json.formatStreams || [])) {
+                    if (!fmt.url) continue;
+                    const quality = fmt.qualityLabel || fmt.quality || 'Unknown';
+                    const container = fmt.container || 'mp4';
+                    streams.push({ url: fmt.url, quality, format: 'mp4', container, hasAudio: true, hasVideo: true, isHLS: false, isLive: false });
+                }
+                for (const fmt of (json.adaptiveFormats || [])) {
+                    if (!fmt.url || !fmt.codec) continue;
+                    const codec = fmt.codec.toLowerCase();
+                    const quality = fmt.qualityLabel || fmt.quality || '';
+                    const bitrate = fmt.bitrate || '';
+                    const container = fmt.container || 'mp4';
+                    if (['vp9','vp8','av1','h264','h265','avc1'].some(v => codec.includes(v))) {
+                        const codecLabel = ['vp9','vp8','av1'].some(v => codec.includes(v)) ? 'WebM' : 'H.264';
+                        const q = (quality.split(' ')[0]) || 'unknown';
+                        streams.push({ url: fmt.url, quality: `${q} (${codecLabel})`, format: 'video', container, hasAudio: false, hasVideo: true, isHLS: false, isLive: false });
+                    } else if (['opus','aac','mp4a','vorbis','mp3'].some(a => codec.includes(a))) {
+                        const br = String(bitrate).split('.')[0] || 'unknown';
+                        let label;
+                        if (codec.includes('opus')) label = `${br} kbps (Opus)`;
+                        else if (codec.includes('aac') || codec.includes('mp4a')) label = `${br} kbps (AAC)`;
+                        else if (codec.includes('vorbis')) label = `${br} kbps (Vorbis)`;
+                        else label = `${br} kbps (${fmt.codec})`;
+                        streams.push({ url: fmt.url, quality: label, format: 'audio', container, hasAudio: true, hasVideo: false, isHLS: false, isLive: false });
+                    }
+                }
+                if (streams.length > 0) {
+                    saveWorkingInstance(instance);
+                    return { streams, hlsUrl: json.hlsUrl, isLive: !!json.liveNow, title: json.title, author: json.author };
+                }
+            } catch { continue; }
+        }
+        return null;
+    }
+
+    // 並列レース型フォールバック（8秒タイムアウト）
+    function clientSideInvidiousRace() {
+        const working = loadWorkingInstances();
+        const all = [...working, ...INV_STREAM_INSTANCES.filter(i => !working.includes(i))];
+
+        return new Promise((resolve) => {
+            let resolved = false;
+            let completed = 0;
+            const total = all.length;
+
+            const done = (result) => {
+                completed++;
+                if (!resolved && result) {
+                    resolved = true;
+                    resolve(result);
+                } else if (completed === total && !resolved) {
+                    resolve(null);
+                }
+            };
+
+            all.forEach(instance => fetchInvidiousFromInstance(instance).then(done).catch(() => done(null)));
+
+            setTimeout(() => { if (!resolved) { resolved = true; resolve(null); } }, 8000);
+        });
+    }
 
     // 初期ロード
     loadYtdlpStream();
@@ -401,7 +527,7 @@
         }
     }
 
-    // ---- nocookie 再生（YouTube プライバシー強化埋め込み） ----
+    // ---- nocookie 再生 ----
     function loadNocookieStream() {
         playerContainer.innerHTML = `<iframe
             src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0"
@@ -411,9 +537,8 @@
         </iframe>`;
     }
 
-    // ---- ytdlp ストリーム（キャッシュ対応・競合防止） ----
+    // ---- ytdlp ストリーム ----
     function loadYtdlpStream() {
-        // キャッシュがあれば即再生（APIリクエストなし）
         if (ytdlpCachedUrl) {
             playerContainer.innerHTML = `<video controls autoplay><source src="${ytdlpCachedUrl}" type="video/mp4"></video>`;
             return;
@@ -437,47 +562,72 @@
             });
     }
 
-    // ---- Invidious ストリーム（競合防止） ----
+    // ---- Invidious ストリーム（バックエンド → クライアントサイドフォールバック） ----
     function loadInvidiousStream() {
-        // キャッシュがあればそのまま使う
-        if (invidiousFormats) {
+        if (invidiousStreams) {
             renderQualityOptions();
             playFirstAvailable();
             return;
         }
         const seq = ++fetchSeq;
         showLoading();
+
         fetch('/api/invidious-stream/' + videoId)
             .then(r => r.json())
-            .then(data => {
+            .then(async data => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                if (data.success && data.formats) {
-                    invidiousFormats = data.formats;
-                    currentQualityType = 'mp4';
+                if (data.success && data.streams && data.streams.length > 0) {
+                    invidiousStreams = data.streams;
+                    currentQualityFilter = 'mp4';
+                    updateQualityTabs('mp4');
+                    renderQualityOptions();
+                    playFirstAvailable();
+                } else {
+                    // バックエンド失敗 → クライアントサイドレースにフォールバック
+                    console.log('[Invidious] Backend failed, trying client-side race...');
+                    showLoading();
+                    const result = await clientSideInvidiousRace();
+                    if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                    if (result && result.streams && result.streams.length > 0) {
+                        invidiousStreams = result.streams;
+                        currentQualityFilter = 'mp4';
+                        updateQualityTabs('mp4');
+                        renderQualityOptions();
+                        playFirstAvailable();
+                    } else {
+                        showError('ストリームの取得に失敗しました。再読み込みしてください');
+                    }
+                }
+            })
+            .catch(async () => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                console.log('[Invidious] Backend error, trying client-side race...');
+                showLoading();
+                const result = await clientSideInvidiousRace();
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                if (result && result.streams && result.streams.length > 0) {
+                    invidiousStreams = result.streams;
+                    currentQualityFilter = 'mp4';
                     updateQualityTabs('mp4');
                     renderQualityOptions();
                     playFirstAvailable();
                 } else {
                     showError('ストリームの取得に失敗しました。再読み込みしてください');
                 }
-            })
-            .catch(() => {
-                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                showError('ストリームの取得に失敗しました。再読み込みしてください');
             });
     }
 
-    // ---- 画質タブ切り替え ----
-    function switchQualityType(type) {
-        currentQualityType = type;
-        updateQualityTabs(type);
+    // ---- 画質フィルタ切り替え ----
+    function switchQualityFilter(filter) {
+        currentQualityFilter = filter;
+        updateQualityTabs(filter);
         renderQualityOptions();
         playFirstAvailable();
     }
 
-    function updateQualityTabs(type) {
+    function updateQualityTabs(filter) {
         ['mp4', 'video', 'audio', 'hls'].forEach(t => {
-            document.getElementById('tab-' + t).classList.toggle('active', t === type);
+            document.getElementById('tab-' + t).classList.toggle('active', t === filter);
         });
     }
 
@@ -485,71 +635,62 @@
     function renderQualityOptions() {
         const optionsDiv = document.getElementById('qualityOptions');
         optionsDiv.innerHTML = '';
-        if (!invidiousFormats) return;
+        if (!invidiousStreams) return;
 
-        const formats = invidiousFormats[currentQualityType] || {};
-        let keys = Object.keys(formats);
+        let filtered;
+        if (currentQualityFilter === 'hls') {
+            filtered = invidiousStreams.filter(s => s.isHLS);
+        } else {
+            filtered = invidiousStreams.filter(s => !s.isHLS && s.format === currentQualityFilter);
+        }
 
         // 解像度・ビットレートで降順ソート
-        keys.sort((a, b) => {
-            const numA = parseInt(a) || 0;
-            const numB = parseInt(b) || 0;
+        filtered.sort((a, b) => {
+            const numA = parseInt(a.quality) || 0;
+            const numB = parseInt(b.quality) || 0;
             return numB - numA;
         });
 
-        keys.forEach((key, i) => {
+        filtered.forEach((stream, i) => {
             const btn = document.createElement('button');
             btn.className = 'quality-option' + (i === 0 ? ' selected' : '');
-            btn.textContent = key;
-            btn.onclick = () => playQuality(key);
+            btn.textContent = stream.quality;
+            btn.onclick = () => playStream(stream);
             optionsDiv.appendChild(btn);
         });
     }
 
     // ---- 最初の画質を自動再生 ----
     function playFirstAvailable() {
-        if (!invidiousFormats) return;
-        const formats = invidiousFormats[currentQualityType] || {};
-        const keys = Object.keys(formats);
-        if (keys.length > 0) {
-            playQuality(keys[0]);
+        if (!invidiousStreams) return;
+        let filtered;
+        if (currentQualityFilter === 'hls') {
+            filtered = invidiousStreams.filter(s => s.isHLS);
+        } else {
+            filtered = invidiousStreams.filter(s => !s.isHLS && s.format === currentQualityFilter);
+        }
+        if (filtered.length > 0) {
+            playStream(filtered[0]);
         } else {
             showError('このカテゴリには再生可能なストリームがありません');
         }
     }
 
-    // ---- 指定した画質を再生 ----
-    function playQuality(key) {
-        if (!invidiousFormats) return;
-        const formats = invidiousFormats[currentQualityType] || {};
-        const url = formats[key];
-        if (!url) return;
-
-        // 選択ボタン更新
+    // ---- 指定したストリームを再生 ----
+    function playStream(stream) {
         document.querySelectorAll('.quality-option').forEach(btn => {
-            btn.classList.toggle('selected', btn.textContent === key);
+            btn.classList.toggle('selected', btn.textContent === stream.quality);
         });
 
-        if (currentQualityType === 'hls') {
-            playerContainer.innerHTML = `<video controls autoplay><source src="${url}" type="application/x-mpegURL"></video>`;
-        } else if (currentQualityType === 'audio') {
-            playerContainer.innerHTML = `<audio controls autoplay style="width:100%;margin:auto;display:block;"><source src="${url}" type="${getAudioMime(key)}"></audio>`;
+        if (stream.isHLS) {
+            playerContainer.innerHTML = `<video controls autoplay><source src="${stream.url}" type="application/x-mpegURL"></video>`;
+        } else if (stream.format === 'audio') {
+            const mime = (stream.container === 'webm') ? 'audio/webm' : 'audio/mp4';
+            playerContainer.innerHTML = `<audio controls autoplay style="width:100%;margin:auto;display:block;"><source src="${stream.url}" type="${mime}"></audio>`;
         } else {
-            playerContainer.innerHTML = `<video controls autoplay><source src="${url}" type="${getVideoMime(key)}"></video>`;
+            const mime = stream.container === 'webm' ? 'video/webm' : 'video/mp4';
+            playerContainer.innerHTML = `<video controls autoplay><source src="${stream.url}" type="${mime}"></video>`;
         }
-    }
-
-    function getVideoMime(key) {
-        if (key.includes('H.264') || key.includes('MP4')) return 'video/mp4';
-        if (key.includes('WebM')) return 'video/webm';
-        return 'video/mp4';
-    }
-
-    function getAudioMime(key) {
-        if (key.includes('AAC')) return 'audio/mp4';
-        if (key.includes('Opus') || key.includes('Vorbis')) return 'audio/webm';
-        if (key.includes('MP3')) return 'audio/mpeg';
-        return 'audio/webm';
     }
 
     // ---- UI ヘルパー ----
