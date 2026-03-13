@@ -416,7 +416,8 @@
     let invidiousStreams = null;
     let ytdlpCachedUrl = null;
     let fetchSeq = 0;
-    let currentInvidiousCombo = null; // { instance, proxy } 最後に成功した組み合わせ
+    let currentInvidiousCombo = null;    // { instance, proxy } 最後に成功した組み合わせ
+    let _usedInvidiousCombos = [];       // 過去に成功した組み合わせをすべて記録
 
     // ---- コンソールログキャプチャ (Invidious取得中のログ表示用) ----
     const _invLogs = [];
@@ -628,12 +629,17 @@
     }
 
     // ---- Wista方式メインフェッチ: キャッシュ→静的プロキシバッチ→GitHubプロキシ ----
-    // excludeCombo: { instance, proxy } を指定するとその組み合わせをスキップ（その1回限り）
-    async function clientSideInvidiousRace(excludeCombo) {
-        // 除外コンボが含まれるバッチからはそのインスタンスだけ除去する
+    // excludeCombos: [{ instance, proxy }, ...] を指定するとその組み合わせをすべてスキップ
+    async function clientSideInvidiousRace(excludeCombos) {
+        const excluded = excludeCombos || [];
+        // 指定プロキシで除外すべきインスタンスのセットを返す
+        const excludedInstancesFor = (proxy) =>
+            new Set(excluded.filter(c => c.proxy === proxy).map(c => c.instance));
+        // バッチから除外インスタンスを取り除く
         const filterBatch = (batch, proxy) => {
-            if (!excludeCombo || excludeCombo.proxy !== proxy) return batch;
-            return batch.filter(i => i !== excludeCombo.instance);
+            const ex = excludedInstancesFor(proxy);
+            if (!ex.size) return batch;
+            return batch.filter(i => !ex.has(i));
         };
 
         const working = _workingInstances.filter(i => INV_STREAM_INSTANCES.includes(i));
@@ -793,15 +799,20 @@
             playFirstAvailable();
             return;
         }
+        // 新規取得なので使用済みリストをリセット
+        _usedInvidiousCombos = [];
+        currentInvidiousCombo = null;
+
         const seq = ++fetchSeq;
         showLoading('Invidiousストリームを取得中...');
         _showLogBtn();
 
-        clientSideInvidiousRace().then(result => {
+        clientSideInvidiousRace([]).then(result => {
             if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
             if (result && result.streams && result.streams.length > 0) {
                 invidiousStreams = result.streams;
                 currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
+                _usedInvidiousCombos.push(currentInvidiousCombo);
                 currentQualityFilter = 'mp4';
                 updateQualityTabs('mp4');
                 renderQualityOptions();
@@ -816,7 +827,8 @@
 
     // ---- 別のインスタンス+プロキシの組み合わせで再取得 ----
     function reloadInvidiousWithDifferentInstance() {
-        const exclude = currentInvidiousCombo;
+        // 過去に成功した全コンボを除外して再検索
+        const excludeAll = _usedInvidiousCombos.slice();
         invidiousStreams = null;
         currentInvidiousCombo = null;
         document.getElementById('btn-reload-instance').style.display = 'none';
@@ -824,11 +836,12 @@
         showLoading('別のインスタンスを検索中...');
         _showLogBtn();
 
-        clientSideInvidiousRace(exclude).then(result => {
+        clientSideInvidiousRace(excludeAll).then(result => {
             if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
             if (result && result.streams && result.streams.length > 0) {
                 invidiousStreams = result.streams;
                 currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
+                _usedInvidiousCombos.push(currentInvidiousCombo);
                 currentQualityFilter = 'mp4';
                 updateQualityTabs('mp4');
                 renderQualityOptions();
