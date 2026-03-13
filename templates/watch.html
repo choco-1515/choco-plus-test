@@ -383,27 +383,39 @@
 
     // ---- Wista方式: クライアントサイドInvidiousフォールバック設定 ----
     const INV_STREAM_INSTANCES = [
+        "https://invidious.darkness.services",
+        "https://yewtu.be",
+        "https://inv.nadeko.net",
+        "https://invidious.privacyredirect.com",
         "https://inv.vern.cc",
         "https://invidious.fdn.fr",
         "https://iv.ggtyler.dev",
         "https://invidious.lunar.icu",
         "https://yt.artemislena.eu",
         "https://invidious.privacydev.net",
-        "https://invidious.drgns.space",
         "https://inv.n8pjl.ca",
-        "https://yewtu.be",
         "https://invidious.nerdvpn.de",
         "https://inv.riverside.rocks",
-        "https://invidious.slipfox.xyz",
         "https://invidious.esmailelbob.xyz",
-        "https://invidious.projectsegfau.lt",
+        "https://invidious.perennialte.ch",
+        "https://invidious.flokinet.to",
+        "https://invidious.protokolla.fi",
+        "https://inv.riverside.rocks",
+        "https://yt.vern.cc",
+        "https://nyc1.iv.ggtyler.dev",
+        "https://y.com.sb",
+        "https://lekker.gay",
+        "https://invidious.sethforprivacy.com",
+        "https://invidious.f5.si",
     ];
     const CORS_PROXIES = [
         "https://corsproxy.io/?url=",
         "https://api.allorigins.win/raw?url=",
         "https://api.codetabs.com/v1/proxy?quest=",
     ];
-    const ERROR_KEYWORDS = ["shutdown", "blocked", "Forbidden", "<!DOCTYPE", "<html", "Rate limit", "not found", "maintenance"];
+    const ERROR_KEYWORDS = ["shutdown", "<!DOCTYPE", "<html", "temporarily unavailable", "maintenance"];
+    const YOUTUBE_RESTRICT_KEYWORDS = ["protect our community", "Sign in to confirm", "age-restricted",
+                                        "This video is unavailable", "not available in your country"];
     const INV_WORKING_KEY = "invidious_working_instances";
 
     function loadWorkingInstances() {
@@ -439,8 +451,12 @@
                 if (!res.ok) continue;
                 const text = await res.text();
                 if (ERROR_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) continue;
+                if (YOUTUBE_RESTRICT_KEYWORDS.some(kw => text.toLowerCase().includes(kw.toLowerCase()))) return { youtube_restricted: true };
                 const json = JSON.parse(text);
-                if (!json.title) continue;
+                if (!json.title) {
+                    if (json.error && YOUTUBE_RESTRICT_KEYWORDS.some(kw => json.error.toLowerCase().includes(kw.toLowerCase()))) return { youtube_restricted: true };
+                    continue;
+                }
 
                 const streams = [];
                 if (json.hlsUrl) {
@@ -496,20 +512,33 @@
             let resolved = false;
             let completed = 0;
             const total = all.length;
+            let ytRestricted = false;
 
             const done = (result) => {
                 completed++;
-                if (!resolved && result) {
-                    resolved = true;
-                    resolve(result);
-                } else if (completed === total && !resolved) {
-                    resolve(null);
+                if (!resolved) {
+                    if (result && result.youtube_restricted) {
+                        ytRestricted = true;
+                    } else if (result && result.streams) {
+                        resolved = true;
+                        resolve(result);
+                        return;
+                    }
+                    if (completed === total) {
+                        resolved = true;
+                        resolve(ytRestricted ? { youtube_restricted: true } : null);
+                    }
                 }
             };
 
             all.forEach(instance => fetchInvidiousFromInstance(instance).then(done).catch(() => done(null)));
 
-            setTimeout(() => { if (!resolved) { resolved = true; resolve(null); } }, 8000);
+            setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve(ytRestricted ? { youtube_restricted: true } : null);
+                }
+            }, 8000);
         });
     }
 
@@ -579,22 +608,29 @@
         showLoading();
 
         fetch('/api/invidious-stream/' + videoId)
-            .then(r => r.json())
-            .then(async data => {
+            .then(async r => {
+                const data = await r.json();
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+
                 if (data.success && data.streams && data.streams.length > 0) {
+                    // バックエンド成功
                     invidiousStreams = data.streams;
                     currentQualityFilter = 'mp4';
                     updateQualityTabs('mp4');
                     renderQualityOptions();
                     playFirstAvailable();
+                } else if (data.error === 'youtube_restricted') {
+                    // YouTube制限エラー → クライアント側でも無理なので即エラー表示
+                    showError(data.message || 'この動画はYouTubeの制限により再生できません');
                 } else {
-                    // バックエンド失敗 → クライアントサイドレースにフォールバック
-                    console.log('[Invidious] Backend failed, trying client-side race...');
-                    showLoading();
+                    // インスタンス障害 → クライアントサイドレースにフォールバック
+                    console.log('[Invidious] Backend unavailable, trying client-side race...');
+                    showLoading('クライアント側でストリームを取得中...');
                     const result = await clientSideInvidiousRace();
                     if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                    if (result && result.streams && result.streams.length > 0) {
+                    if (result && result.youtube_restricted) {
+                        showError('この動画はYouTubeの制限により再生できません（年齢制限・地域制限など）');
+                    } else if (result && result.streams && result.streams.length > 0) {
                         invidiousStreams = result.streams;
                         currentQualityFilter = 'mp4';
                         updateQualityTabs('mp4');
@@ -608,10 +644,12 @@
             .catch(async () => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
                 console.log('[Invidious] Backend error, trying client-side race...');
-                showLoading();
+                showLoading('クライアント側でストリームを取得中...');
                 const result = await clientSideInvidiousRace();
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                if (result && result.streams && result.streams.length > 0) {
+                if (result && result.youtube_restricted) {
+                    showError('この動画はYouTubeの制限により再生できません（年齢制限・地域制限など）');
+                } else if (result && result.streams && result.streams.length > 0) {
                     invidiousStreams = result.streams;
                     currentQualityFilter = 'mp4';
                     updateQualityTabs('mp4');
@@ -700,8 +738,9 @@
     }
 
     // ---- UI ヘルパー ----
-    function showLoading() {
-        playerContainer.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p style="color:#aaa;font-size:14px;">ストリームを読み込み中...</p></div>';
+    function showLoading(msg) {
+        const text = msg || 'ストリームを読み込み中...';
+        playerContainer.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><p style="color:#aaa;font-size:14px;">${text}</p></div>`;
     }
 
     function showError(message) {
