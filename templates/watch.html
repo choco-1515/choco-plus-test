@@ -549,22 +549,10 @@
             if (res.ok) {
                 const text = await res.text();
                 let proxies = [];
-                // JSON配列形式とプレーンテキスト形式の両方に対応
-                try {
-                    const parsed = JSON.parse(text);
-                    if (Array.isArray(parsed)) {
-                        proxies = parsed.filter(l => typeof l === 'string' &&
-                            (l.startsWith('http://') || l.startsWith('https://')));
-                        console.log(`[CORSProxy] Parsed as JSON array: ${proxies.length} entries`);
-                    }
-                } catch {
-                    // JSONでなければ1行1URLのプレーンテキストとして処理
-                    proxies = text.split('\n').map(l => l.trim()).filter(l =>
-                        l && !l.startsWith('#') && !l.startsWith('//') &&
-                        (l.startsWith('http://') || l.startsWith('https://'))
-                    );
-                    console.log(`[CORSProxy] Parsed as plain text: ${proxies.length} entries`);
-                }
+                // 正規表現でURLを直接抽出（JSON不備・プレーンテキスト両対応）
+                const matches = text.match(/https?:\/\/[^\s"',\]]+/g) || [];
+                proxies = matches.filter(l => l.startsWith('http://') || l.startsWith('https://'));
+                console.log(`[CORSProxy] Extracted ${proxies.length} proxies via regex`);
                 // URLの末尾スラッシュを統一
                 proxies = proxies.map(l => l.endsWith('/') ? l : l + '/');
                 console.log(`[CORSProxy] Parsed ${proxies.length} proxies from GitHub`);
