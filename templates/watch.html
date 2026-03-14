@@ -409,29 +409,25 @@
         </div>
 
         <!-- 動画タイトル・チャンネル・メタデータ -->
-        {% if video_title %}
         <div class="video-metadata">
-            <div class="video-title">{{ video_title }}</div>
-            {% if channel_name %}
+            <div class="video-title">{{ video_title if video_title else 'Video:' ~ video_id }}</div>
             <div class="channel-info">
                 {% if channel_icon %}
-                    <img src="{{ channel_icon }}" alt="{{ channel_name }}" class="channel-icon">
+                    <img src="{{ channel_icon }}" alt="{{ channel_name or 'Unknown' }}" class="channel-icon">
                 {% else %}
-                    <div class="channel-icon"></div>
+                    <div class="channel-icon" style="display:flex;align-items:center;justify-content:center;font-size:18px;color:#888;">?</div>
                 {% endif %}
                 <div class="channel-details">
-                    <div class="channel-name">{{ channel_name }}</div>
+                    <div class="channel-name">{{ channel_name if channel_name else 'Unknown' }}</div>
                     {% if subscriber_count %}<div class="channel-subs">{{ subscriber_count }}</div>{% endif %}
                 </div>
             </div>
-            {% endif %}
             <!-- 動画メタデータ枠 -->
             <div class="video-desc-box">
                 <div class="video-desc-label">動画情報</div>
                 <div>準備中</div>
             </div>
         </div>
-        {% endif %}
 
         <!-- コメント欄 -->
         <div class="comments-section">
