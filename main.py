@@ -48,29 +48,41 @@ INVIDIOUS_INSTANCES = [
 ]
 
 INVIDIOUS_STREAM_INSTANCES = [
-    "https://invidious.darkness.services",
-    "https://invidious.lol",
-    "https://inv.in.projectsegfau.lt",
-    "https://invidious.twigotech.eu",
-    "https://invidious.st",
-    "https://invidious.mint.lgbt",
-    "https://invidious.io",
-    "https://inv.stacher.io",
-    "https://i.owo.si",
-    "https://invidious.namazso.eu",
-    "https://invidious.reallyaweso.me",
-    "https://invidious.asir.dev",
-    "https://invidious.sethforprivacy.com",
-    "https://invidious.einfachzocken.eu",
+    "https://app.materialio.us",
+    "https://inv.kamuridesu.com",
     "https://inv.nadeko.net",
+    "https://inv.vern.cc",
     "https://inv1.nadeko.net",
     "https://inv2.nadeko.net",
     "https://inv3.nadeko.net",
-    "https://yewtu.be",
-    "https://vid.puffyan.us",
+    "https://inv4.nadeko.net",
+    "https://inv5.nadeko.net",
+    "https://inv6.nadeko.net",
+    "https://inv7.nadeko.net",
+    "https://inv8.nadeko.net",
+    "https://inv9.nadeko.net",
+    "https://invidious.f5.si",
+    "https://invidious.lunivers.trade",
+    "https://invidious.nerdvpn.de",
+    "https://invidious.nietzospannend.nl",
+    "https://invidious.projektegfau.lt",
     "https://invidious.protokolla.fi",
-    "https://iv.melmac.space",
-    "https://invidious.privacydev.net",
+    "https://invidious.tiekoetter.com",
+    "https://lekker.gay",
+    "https://nyc1.iv.ggtyler.dev",
+    "https://rust.oskamp.nl",
+    "https://y.com.sb",
+    "https://yewtu.be",
+    "https://yt.thechangebook.org",
+    "https://yt.vern.cc",
+    "https://invidious.darkness.services",
+    "https://invidious.privacyredirect.com",
+    "https://invidious.fdn.fr",
+    "https://iv.ggtyler.dev",
+    "https://invidious.lunar.icu",
+    "https://yt.artemislena.eu",
+    "https://invidious.flokinet.to",
+    "https://invidious.sethforprivacy.com",
 ]
 
 BROWSER_HEADERS = {
@@ -625,31 +637,38 @@ def invidious_stream(video_id):
     random.shuffle(rest)
     instances = cached + rest
 
+    BATCH_SIZE = 7
     result = None
     youtube_restricted = False
-    with ThreadPoolExecutor(max_workers=len(instances)) as executor:
-        futures = {executor.submit(fetch_from_instance, inst): inst for inst in instances}
-        try:
-            for future in as_completed(futures, timeout=10):
-                try:
-                    res = future.result(timeout=2)
-                    if res:
-                        if res.get('youtube_restricted'):
-                            youtube_restricted = True
-                            continue
-                        if res.get('streams'):
-                            result = res
-                            # 動作インスタンスをキャッシュに追加
-                            inst_url = res['instance']
-                            if inst_url not in _invidious_working_cache:
-                                _invidious_working_cache.insert(0, inst_url)
-                                _invidious_working_cache[:] = _invidious_working_cache[:8]
-                            logger.info(f"[Invidious] Success from {inst_url}")
-                            break
-                except Exception:
-                    continue
-        except TimeoutError:
-            logger.warning("[Invidious] Race timed out after 10s")
+
+    # 7個ずつバッチに分けて並列リクエスト、1件成功したら即終了
+    for batch_start in range(0, len(instances), BATCH_SIZE):
+        batch = instances[batch_start:batch_start + BATCH_SIZE]
+        logger.debug(f"[Invidious] Batch {batch_start // BATCH_SIZE + 1}: trying {[b.split('//')[1] for b in batch]}")
+        with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+            futures = {executor.submit(fetch_from_instance, inst): inst for inst in batch}
+            try:
+                for future in as_completed(futures, timeout=10):
+                    try:
+                        res = future.result(timeout=2)
+                        if res:
+                            if res.get('youtube_restricted'):
+                                youtube_restricted = True
+                                continue
+                            if res.get('streams'):
+                                result = res
+                                inst_url = res['instance']
+                                if inst_url not in _invidious_working_cache:
+                                    _invidious_working_cache.insert(0, inst_url)
+                                    _invidious_working_cache[:] = _invidious_working_cache[:8]
+                                logger.info(f"[Invidious] Success from {inst_url} (batch {batch_start // BATCH_SIZE + 1})")
+                                break
+                    except Exception:
+                        continue
+            except TimeoutError:
+                logger.warning(f"[Invidious] Batch {batch_start // BATCH_SIZE + 1} timed out")
+        if result:
+            break
 
     if result:
         return jsonify({
