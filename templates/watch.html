@@ -893,22 +893,62 @@
         showLoading('Invidiousストリームを取得中...');
         _showLogBtn();
 
-        clientSideInvidiousRace([]).then(result => {
-            if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-            if (result && result.streams && result.streams.length > 0) {
-                invidiousStreams = result.streams;
-                currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
-                _usedInvidiousCombos.push(currentInvidiousCombo);
-                currentQualityFilter = 'mp4';
-                updateQualityTabs('mp4');
-                renderQualityOptions();
-                playFirstAvailable();
-                _hideLogArea();
-                document.getElementById('btn-reload-instance').style.display = 'inline-block';
-            } else {
-                showError('ストリームの取得に失敗しました。再読み込みしてください');
-            }
-        });
+        // まずバックエンドAPIで取得を試みる（CORSエラー回避）
+        fetch(`/api/invidious-stream/${videoId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                if (data.success && data.streams && data.streams.length > 0) {
+                    invidiousStreams = data.streams;
+                    currentInvidiousCombo = { instance: 'backend', proxy: 'backend' };
+                    _usedInvidiousCombos.push(currentInvidiousCombo);
+                    currentQualityFilter = 'mp4';
+                    updateQualityTabs('mp4');
+                    renderQualityOptions();
+                    playFirstAvailable();
+                    _hideLogArea();
+                    document.getElementById('btn-reload-instance').style.display = 'inline-block';
+                    return;
+                }
+                // バックエンドが失敗した場合はクライアントサイドフォールバック
+                console.warn('[Invidious] Backend API failed, falling back to client-side race...');
+                return clientSideInvidiousRace([]).then(result => {
+                    if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                    if (result && result.streams && result.streams.length > 0) {
+                        invidiousStreams = result.streams;
+                        currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
+                        _usedInvidiousCombos.push(currentInvidiousCombo);
+                        currentQualityFilter = 'mp4';
+                        updateQualityTabs('mp4');
+                        renderQualityOptions();
+                        playFirstAvailable();
+                        _hideLogArea();
+                        document.getElementById('btn-reload-instance').style.display = 'inline-block';
+                    } else {
+                        showError('ストリームの取得に失敗しました。再読み込みしてください');
+                    }
+                });
+            })
+            .catch(err => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                console.warn('[Invidious] Backend API error, falling back to client-side race:', err);
+                clientSideInvidiousRace([]).then(result => {
+                    if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                    if (result && result.streams && result.streams.length > 0) {
+                        invidiousStreams = result.streams;
+                        currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
+                        _usedInvidiousCombos.push(currentInvidiousCombo);
+                        currentQualityFilter = 'mp4';
+                        updateQualityTabs('mp4');
+                        renderQualityOptions();
+                        playFirstAvailable();
+                        _hideLogArea();
+                        document.getElementById('btn-reload-instance').style.display = 'inline-block';
+                    } else {
+                        showError('ストリームの取得に失敗しました。再読み込みしてください');
+                    }
+                });
+            });
     }
 
     // ---- 別のインスタンス+プロキシの組み合わせで再取得 ----
