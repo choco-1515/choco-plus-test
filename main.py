@@ -62,6 +62,15 @@ INVIDIOUS_STREAM_INSTANCES = [
     "https://invidious.asir.dev",
     "https://invidious.sethforprivacy.com",
     "https://invidious.einfachzocken.eu",
+    "https://inv.nadeko.net",
+    "https://inv1.nadeko.net",
+    "https://inv2.nadeko.net",
+    "https://inv3.nadeko.net",
+    "https://yewtu.be",
+    "https://vid.puffyan.us",
+    "https://invidious.protokolla.fi",
+    "https://iv.melmac.space",
+    "https://invidious.privacydev.net",
 ]
 
 BROWSER_HEADERS = {
@@ -485,7 +494,7 @@ def invidious_stream(video_id):
     def fetch_from_instance(instance):
         try:
             url = f"{instance}/api/v1/videos/{video_id}"
-            response = requests.get(url, timeout=3, headers=BROWSER_HEADERS, allow_redirects=True)
+            response = requests.get(url, timeout=6, headers=BROWSER_HEADERS, allow_redirects=True)
             if response.status_code not in (200, 500):
                 return None
 
@@ -621,9 +630,9 @@ def invidious_stream(video_id):
     with ThreadPoolExecutor(max_workers=len(instances)) as executor:
         futures = {executor.submit(fetch_from_instance, inst): inst for inst in instances}
         try:
-            for future in as_completed(futures, timeout=5):
+            for future in as_completed(futures, timeout=10):
                 try:
-                    res = future.result(timeout=1)
+                    res = future.result(timeout=2)
                     if res:
                         if res.get('youtube_restricted'):
                             youtube_restricted = True
@@ -640,7 +649,7 @@ def invidious_stream(video_id):
                 except Exception:
                     continue
         except TimeoutError:
-            logger.warning("[Invidious] Race timed out after 8s")
+            logger.warning("[Invidious] Race timed out after 10s")
 
     if result:
         return jsonify({
