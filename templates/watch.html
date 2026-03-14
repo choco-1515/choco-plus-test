@@ -934,6 +934,10 @@
         if (invidiousStreams) {
             renderQualityOptions();
             playFirstAvailable();
+            // 以前に成功していたらボタンを再表示
+            if (currentInvidiousCombo) {
+                document.getElementById('btn-reload-instance').style.display = 'inline-block';
+            }
             return;
         }
         // 新規取得なので使用済みリストをリセット
@@ -967,7 +971,8 @@
             .then(data => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
                 if (data.success && data.streams && data.streams.length > 0) {
-                    _applyInvidiousResult({ streams: data.streams, instance: 'backend', proxy: 'backend' });
+                    // バックエンドが実際に使ったインスタンスを記録（proxy='backend'で区別）
+                    _applyInvidiousResult({ streams: data.streams, instance: data.instance || 'backend', proxy: 'backend' });
                     return;
                 }
                 // バックエンドが失敗した場合はクライアントサイドフォールバック
@@ -983,8 +988,13 @@
 
     // ---- 別のインスタンス+プロキシの組み合わせで再取得 ----
     function reloadInvidiousWithDifferentInstance() {
-        // 過去に成功した全コンボを除外して再検索
-        const excludeAll = _usedInvidiousCombos.slice();
+        // 現在成功している1組だけを除外
+        const excludeAll = currentInvidiousCombo ? [currentInvidiousCombo] : [];
+        // 除外インスタンスURL（バックエンド用）
+        const excludeInstances = currentInvidiousCombo && currentInvidiousCombo.instance !== 'backend'
+            ? [currentInvidiousCombo.instance]
+            : [];
+
         invidiousStreams = null;
         currentInvidiousCombo = null;
         document.getElementById('btn-reload-instance').style.display = 'none';
@@ -997,14 +1007,39 @@
             if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
             showRetryPrompt();
         };
-        clientSideInvidiousRace(excludeAll, onGithubFallback).then(result => {
-            if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-            if (result && result.streams && result.streams.length > 0) {
-                _applyInvidiousResult(result);
-            } else {
-                showError('別のインスタンスが見つかりませんでした。再読み込みしてください');
-            }
-        });
+
+        // クライアントサイドフォールバック（全除外コンボを渡す）
+        const runClientSide = () => {
+            return clientSideInvidiousRace(excludeAll, onGithubFallback).then(result => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                if (result && result.streams && result.streams.length > 0) {
+                    _applyInvidiousResult(result);
+                } else {
+                    showError('別のインスタンスが見つかりませんでした。再読み込みしてください');
+                }
+            });
+        };
+
+        // バックエンドAPIに除外インスタンスを渡して再試行
+        const excludeParam = excludeInstances.length > 0
+            ? '?exclude=' + excludeInstances.map(encodeURIComponent).join(',')
+            : '';
+        fetch(`/api/invidious-stream/${videoId}${excludeParam}`)
+            .then(res => res.json())
+            .then(data => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                if (data.success && data.streams && data.streams.length > 0) {
+                    _applyInvidiousResult({ streams: data.streams, instance: data.instance || 'backend', proxy: 'backend' });
+                    return;
+                }
+                console.warn('[Invidious] Backend reload failed, falling back to client-side...');
+                return runClientSide();
+            })
+            .catch(err => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                console.warn('[Invidious] Backend reload error, falling back to client-side:', err);
+                runClientSide();
+            });
     }
 
     // ---- 画質フィルタ切り替え ----
