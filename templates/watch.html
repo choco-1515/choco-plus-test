@@ -966,22 +966,24 @@
         };
 
         // まずバックエンドAPIで取得を試みる（CORSエラー回避）
+        console.log('[Backend] サーバー側でInvidiousインスタンスに並列リクエスト中...');
         fetch(`/api/invidious-stream/${videoId}`)
             .then(res => res.json())
             .then(data => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
                 if (data.success && data.streams && data.streams.length > 0) {
-                    // バックエンドが実際に使ったインスタンスを記録（proxy='backend'で区別）
+                    const inst = data.instance || '(不明)';
+                    console.log(`[Backend] 取得成功: ${inst} (${data.streams.length}ストリーム)`);
                     _applyInvidiousResult({ streams: data.streams, instance: data.instance || 'backend', proxy: 'backend' });
                     return;
                 }
                 // バックエンドが失敗した場合はクライアントサイドフォールバック
-                console.warn('[Invidious] Backend API failed, falling back to client-side race...');
+                console.warn('[Backend] 取得失敗。クライアントサイドフォールバックへ...');
                 return runClientSideRace();
             })
             .catch(err => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                console.warn('[Invidious] Backend API error, falling back to client-side race:', err);
+                console.warn('[Backend] リクエストエラー。クライアントサイドフォールバックへ:', err.message || err);
                 runClientSideRace();
             });
     }
@@ -1024,20 +1026,26 @@
         const excludeParam = excludeInstances.length > 0
             ? '?exclude=' + excludeInstances.map(encodeURIComponent).join(',')
             : '';
+        if (excludeInstances.length > 0) {
+            console.log(`[Backend] 除外: ${excludeInstances.join(', ')}`);
+        }
+        console.log('[Backend] サーバー側で別のインスタンスに並列リクエスト中...');
         fetch(`/api/invidious-stream/${videoId}${excludeParam}`)
             .then(res => res.json())
             .then(data => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
                 if (data.success && data.streams && data.streams.length > 0) {
+                    const inst = data.instance || '(不明)';
+                    console.log(`[Backend] 取得成功: ${inst} (${data.streams.length}ストリーム)`);
                     _applyInvidiousResult({ streams: data.streams, instance: data.instance || 'backend', proxy: 'backend' });
                     return;
                 }
-                console.warn('[Invidious] Backend reload failed, falling back to client-side...');
+                console.warn('[Backend] 取得失敗。クライアントサイドフォールバックへ...');
                 return runClientSide();
             })
             .catch(err => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                console.warn('[Invidious] Backend reload error, falling back to client-side:', err);
+                console.warn('[Backend] リクエストエラー。クライアントサイドフォールバックへ:', err.message || err);
                 runClientSide();
             });
     }
