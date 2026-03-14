@@ -699,9 +699,10 @@
         });
     }
 
-    // ---- Wista方式メインフェッチ: キャッシュ→静的プロキシバッチ→GitHubプロキシ ----
+    // ---- Wista方式メインフェッチ: 直接アクセス→キャッシュ→静的プロキシバッチ→GitHubプロキシ ----
     // excludeCombos: [{ instance, proxy }, ...] を指定するとその組み合わせをすべてスキップ
-    async function clientSideInvidiousRace(excludeCombos) {
+    // onGithubFallback: GitHubプロキシリスト取得に入る直前に呼ばれるコールバック
+    async function clientSideInvidiousRace(excludeCombos, onGithubFallback) {
         // 前回のレースが残っていたら中止
         if (_raceAbortController) _raceAbortController.abort();
         _raceAbortController = new AbortController();
@@ -719,6 +720,16 @@
         const working = _workingInstances.filter(i => INV_STREAM_INSTANCES.includes(i));
         const rest = INV_STREAM_INSTANCES.filter(i => !working.includes(i));
         const all = [...working, ...rest];
+
+        // 直接アクセス（プロキシなし）: ブラウザのCORS設定次第で一部通る場合がある
+        {
+            if (signal.aborted) return null;
+            const directBatch = filterBatch(all, '');
+            if (directBatch.length > 0) {
+                const r = await fetchInvidiousBatch(directBatch, '', INV_REQ_TIMEOUT, signal);
+                if (r) { console.log('[Invidious] Direct access hit:', r.instance); _raceAbortController.abort(); return r; }
+            }
+        }
 
         // ファストパス: キャッシュ済みインスタンス × 最初のプロキシ
         if (working.length > 0 && CORS_PROXIES_STATIC.length > 0) {
@@ -746,6 +757,10 @@
         // GitHubフォールバック: 動的CORSプロキシリストを取得して再試行
         if (signal.aborted) return null;
         console.log('[Invidious] Static proxies exhausted, fetching GitHub proxy list...');
+
+        // GitHubリストに入る前にコールバックで通知（UIに「絶望的」表示を出す）
+        if (typeof onGithubFallback === 'function') onGithubFallback();
+
         const githubProxies = await fetchGithubProxies();
         if (signal.aborted) return null;
         if (githubProxies.length === 0) {
@@ -878,6 +893,39 @@
             });
     }
 
+    // ---- Invidiousストリーム取得成功時の共通処理 ----
+    function _applyInvidiousResult(result) {
+        invidiousStreams = result.streams;
+        currentInvidiousCombo = { instance: result.instance || 'backend', proxy: result.proxy || 'backend' };
+        _usedInvidiousCombos.push(currentInvidiousCombo);
+        currentQualityFilter = 'mp4';
+        updateQualityTabs('mp4');
+        renderQualityOptions();
+        playFirstAvailable();
+        _hideLogArea();
+        document.getElementById('btn-reload-instance').style.display = 'inline-block';
+    }
+
+    // ---- GitHubフォールバック突入時の「絶望的」UI表示 ----
+    function showRetryPrompt() {
+        playerContainer.innerHTML = `
+            <div class="player-error">
+                <div class="error-message-box">
+                    <div class="error-message">Invidiousストリーム取得が絶望的です。</div>
+                    <button class="reload-button" onclick="retryInvidiousFromBackend()">ここを押してもう一度読み込む</button>
+                </div>
+            </div>`;
+    }
+
+    // ---- 「もう一度」ボタンから呼ばれる: 処理を止めてバックエンドから再試行 ----
+    function retryInvidiousFromBackend() {
+        if (_raceAbortController) { _raceAbortController.abort(); _raceAbortController = null; }
+        invidiousStreams = null;
+        _usedInvidiousCombos = [];
+        currentInvidiousCombo = null;
+        loadInvidiousStream();
+    }
+
     // ---- Invidious ストリーム（ブラウザから直接クライアントサイドレース）----
     function loadInvidiousStream() {
         if (invidiousStreams) {
@@ -893,61 +941,40 @@
         showLoading('Invidiousストリームを取得中...');
         _showLogBtn();
 
+        // クライアントサイドフォールバック共通処理
+        const runClientSideRace = () => {
+            const onGithubFallback = () => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                showRetryPrompt();
+                // レースは継続させる（ボタンを押さない限り）
+            };
+            return clientSideInvidiousRace([], onGithubFallback).then(result => {
+                if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+                if (result && result.streams && result.streams.length > 0) {
+                    _applyInvidiousResult(result);
+                } else {
+                    showError('ストリームの取得に失敗しました。再読み込みしてください');
+                }
+            });
+        };
+
         // まずバックエンドAPIで取得を試みる（CORSエラー回避）
         fetch(`/api/invidious-stream/${videoId}`)
             .then(res => res.json())
             .then(data => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
                 if (data.success && data.streams && data.streams.length > 0) {
-                    invidiousStreams = data.streams;
-                    currentInvidiousCombo = { instance: 'backend', proxy: 'backend' };
-                    _usedInvidiousCombos.push(currentInvidiousCombo);
-                    currentQualityFilter = 'mp4';
-                    updateQualityTabs('mp4');
-                    renderQualityOptions();
-                    playFirstAvailable();
-                    _hideLogArea();
-                    document.getElementById('btn-reload-instance').style.display = 'inline-block';
+                    _applyInvidiousResult({ streams: data.streams, instance: 'backend', proxy: 'backend' });
                     return;
                 }
                 // バックエンドが失敗した場合はクライアントサイドフォールバック
                 console.warn('[Invidious] Backend API failed, falling back to client-side race...');
-                return clientSideInvidiousRace([]).then(result => {
-                    if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                    if (result && result.streams && result.streams.length > 0) {
-                        invidiousStreams = result.streams;
-                        currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
-                        _usedInvidiousCombos.push(currentInvidiousCombo);
-                        currentQualityFilter = 'mp4';
-                        updateQualityTabs('mp4');
-                        renderQualityOptions();
-                        playFirstAvailable();
-                        _hideLogArea();
-                        document.getElementById('btn-reload-instance').style.display = 'inline-block';
-                    } else {
-                        showError('ストリームの取得に失敗しました。再読み込みしてください');
-                    }
-                });
+                return runClientSideRace();
             })
             .catch(err => {
                 if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
                 console.warn('[Invidious] Backend API error, falling back to client-side race:', err);
-                clientSideInvidiousRace([]).then(result => {
-                    if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
-                    if (result && result.streams && result.streams.length > 0) {
-                        invidiousStreams = result.streams;
-                        currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
-                        _usedInvidiousCombos.push(currentInvidiousCombo);
-                        currentQualityFilter = 'mp4';
-                        updateQualityTabs('mp4');
-                        renderQualityOptions();
-                        playFirstAvailable();
-                        _hideLogArea();
-                        document.getElementById('btn-reload-instance').style.display = 'inline-block';
-                    } else {
-                        showError('ストリームの取得に失敗しました。再読み込みしてください');
-                    }
-                });
+                runClientSideRace();
             });
     }
 
@@ -963,18 +990,14 @@
         showLoading('別のインスタンスを検索中...');
         _showLogBtn();
 
-        clientSideInvidiousRace(excludeAll).then(result => {
+        const onGithubFallback = () => {
+            if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
+            showRetryPrompt();
+        };
+        clientSideInvidiousRace(excludeAll, onGithubFallback).then(result => {
             if (seq !== fetchSeq || currentStreamType !== 'invidious') return;
             if (result && result.streams && result.streams.length > 0) {
-                invidiousStreams = result.streams;
-                currentInvidiousCombo = { instance: result.instance, proxy: result.proxy };
-                _usedInvidiousCombos.push(currentInvidiousCombo);
-                currentQualityFilter = 'mp4';
-                updateQualityTabs('mp4');
-                renderQualityOptions();
-                playFirstAvailable();
-                _hideLogArea();
-                document.getElementById('btn-reload-instance').style.display = 'inline-block';
+                _applyInvidiousResult(result);
             } else {
                 showError('別のインスタンスが見つかりませんでした。再読み込みしてください');
             }
