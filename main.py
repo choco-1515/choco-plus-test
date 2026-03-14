@@ -599,9 +599,9 @@ def invidious_stream(video_id):
                     br_raw = int(str(bitrate).split('.')[0]) if bitrate else 0
                     br = f"{round(br_raw / 1000)}" if br_raw > 1000 else str(br_raw)
                     if 'opus' in codec_lower:
-                        label = f"{br} kbps (Opus)"
+                        label = f"{br} kbps (WebM)"
                     elif 'aac' in codec_lower or 'mp4a' in codec_lower:
-                        label = f"{br} kbps (AAC)"
+                        label = f"{br} kbps (M4A)"
                     elif 'vorbis' in codec_lower:
                         label = f"{br} kbps (Vorbis)"
                     else:
