@@ -610,7 +610,7 @@
             } else if (isAudioMime || ['opus','aac','mp4a','vorbis','mp3'].some(a => codec.includes(a))) {
                 const brRaw = parseInt(String(bitrate).split('.')[0]) || 0;
                 const br = brRaw > 1000 ? Math.round(brRaw / 1000) : brRaw;
-                let label = codec.includes('opus') ? `${br} kbps (Opus)` : codec.includes('aac') || codec.includes('mp4a') ? `${br} kbps (AAC)` : codec.includes('vorbis') ? `${br} kbps (Vorbis)` : `${br} kbps (${(fmt.encoding||'Audio').toUpperCase()})`;
+                let label = codec.includes('opus') ? `${br} kbps (WebM)` : codec.includes('aac') || codec.includes('mp4a') ? `${br} kbps (M4A)` : codec.includes('vorbis') ? `${br} kbps (Vorbis)` : `${br} kbps (${(fmt.encoding||'Audio').toUpperCase()})`;
                 streams.push({ url: fmt.url, quality: label, format: 'audio', container, hasAudio: true, hasVideo: false, isHLS: false, isLive: false });
             }
         }
