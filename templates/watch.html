@@ -276,22 +276,6 @@
         margin: 0 0 6px 0;
     }
 
-    .video-info {
-        display: flex;
-        gap: 8px;
-        font-size: 13px;
-        color: #aaa;
-        margin-bottom: 12px;
-        flex-wrap: wrap;
-        align-items: center;
-    }
-
-    .video-info span + span::before {
-        content: "•";
-        margin-right: 8px;
-        color: #555;
-    }
-
     .channel-info {
         display: flex;
         align-items: center;
@@ -428,10 +412,6 @@
         {% if video_title %}
         <div class="video-metadata">
             <div class="video-title">{{ video_title }}</div>
-            <div class="video-info">
-                {% if view_count %}<span>{{ view_count }} 回視聴</span>{% endif %}
-                {% if published_at %}<span>{{ published_at }}</span>{% endif %}
-            </div>
             {% if channel_name %}
             <div class="channel-info">
                 {% if channel_icon %}
