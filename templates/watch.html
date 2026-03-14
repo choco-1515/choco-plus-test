@@ -261,55 +261,90 @@
         to { transform: rotate(360deg); }
     }
 
+    /* ---- 動画タイトル・チャンネル（カードなし、YouTube風） ---- */
     .video-metadata {
-        background: #1a1a1a;
-        padding: 20px;
-        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
     }
 
     .video-title {
-        font-size: 20px;
-        font-weight: 600;
-        margin-bottom: 10px;
+        font-size: 18px;
+        font-weight: 700;
         color: #fff;
+        line-height: 1.4;
+        margin: 0 0 6px 0;
     }
 
     .video-info {
         display: flex;
-        gap: 20px;
-        font-size: 14px;
+        gap: 8px;
+        font-size: 13px;
         color: #aaa;
-        margin-bottom: 15px;
+        margin-bottom: 12px;
         flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .video-info span + span::before {
+        content: "•";
+        margin-right: 8px;
+        color: #555;
     }
 
     .channel-info {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding-top: 15px;
-        border-top: 1px solid #333;
+        gap: 10px;
+        padding: 12px 0;
+        border-top: 1px solid #2a2a2a;
+        border-bottom: 1px solid #2a2a2a;
     }
 
     .channel-icon {
-        width: 40px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
         border-radius: 50%;
         background: #333;
         flex-shrink: 0;
+        object-fit: cover;
     }
 
-    .channel-details { flex: 1; }
+    .channel-details { flex: 1; min-width: 0; }
 
     .channel-name {
         font-weight: 600;
         color: #fff;
         font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .channel-subs {
         font-size: 12px;
         color: #aaa;
+        margin-top: 1px;
+    }
+
+    /* ---- 動画メタデータ枠（準備中） ---- */
+    .video-desc-box {
+        background: #1a1a1a;
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-top: 12px;
+        font-size: 13px;
+        color: #aaa;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    .video-desc-box:hover { background: #222; }
+    .video-desc-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #888;
+        letter-spacing: 0.04em;
+        margin-bottom: 4px;
     }
 
     .comments-section {
@@ -389,7 +424,7 @@
             </div>
         </div>
 
-        <!-- 動画メタデータ -->
+        <!-- 動画タイトル・チャンネル・メタデータ -->
         {% if video_title %}
         <div class="video-metadata">
             <div class="video-title">{{ video_title }}</div>
@@ -406,10 +441,15 @@
                 {% endif %}
                 <div class="channel-details">
                     <div class="channel-name">{{ channel_name }}</div>
-                    {% if subscriber_count %}<div class="channel-subs">{{ subscriber_count }} 人がフォロー</div>{% endif %}
+                    {% if subscriber_count %}<div class="channel-subs">{{ subscriber_count }}</div>{% endif %}
                 </div>
             </div>
             {% endif %}
+            <!-- 動画メタデータ枠 -->
+            <div class="video-desc-box">
+                <div class="video-desc-label">動画情報</div>
+                <div>準備中</div>
+            </div>
         </div>
         {% endif %}
 
