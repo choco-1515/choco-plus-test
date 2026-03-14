@@ -435,6 +435,7 @@
     let fetchSeq = 0;
     let currentInvidiousCombo = null;    // { instance, proxy } 最後に成功した組み合わせ
     let _usedInvidiousCombos = [];       // 過去に成功した組み合わせをすべて記録
+    let _raceAbortController = null;     // 実行中のレースをキャンセルするコントローラ
 
     // ---- コンソールログキャプチャ (Invidious取得中のログ表示用) ----
     const _invLogs = [];
@@ -590,10 +591,14 @@
         return _githubProxies;
     }
 
-    // ---- タイムアウト付きfetch ----
-    async function fetchWithTimeout(url, ms) {
+    // ---- タイムアウト付きfetch（外部シグナル対応）----
+    async function fetchWithTimeout(url, ms, externalSignal) {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), ms);
+        if (externalSignal) {
+            if (externalSignal.aborted) { clearTimeout(timer); throw new DOMException('Aborted', 'AbortError'); }
+            externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+        }
         try {
             const res = await fetch(url, { signal: ctrl.signal });
             clearTimeout(timer);
@@ -635,11 +640,18 @@
     }
 
     // ---- バッチ並行リクエスト（Wista方式）----
-    function fetchInvidiousBatch(instances, proxy, timeoutMs) {
+    function fetchInvidiousBatch(instances, proxy, timeoutMs, externalSignal) {
+        // バッチ内で1件成功したら残りをキャンセルするための内部コントローラ
+        const batchCtrl = new AbortController();
+        if (externalSignal) {
+            if (externalSignal.aborted) { batchCtrl.abort(); }
+            else { externalSignal.addEventListener('abort', () => batchCtrl.abort(), { once: true }); }
+        }
+
         const promises = instances.map(instance => {
             const apiUrl = `${instance}/api/v1/videos/${videoId}`;
             const reqUrl = proxy ? `${proxy}${encodeURIComponent(apiUrl)}` : apiUrl;
-            return fetchWithTimeout(reqUrl, timeoutMs)
+            return fetchWithTimeout(reqUrl, timeoutMs, batchCtrl.signal)
                 .then(async res => {
                     if (!res.ok) {
                         console.error(`[Fetch] NG instance="${instance}" proxy="${proxy || 'none'}" status=${res.status}`);
@@ -664,30 +676,40 @@
                     return { streams, hlsUrl: json.hlsUrl, isLive: !!json.liveNow, title: json.title, author: json.author, instance, proxy };
                 })
                 .catch(err => {
+                    if (err && err.name === 'AbortError') return null; // キャンセル時はログ不要
                     const reason = (err && err.message) ? err.message : String(err);
                     console.error(`[Fetch] ERR instance="${instance}" proxy="${proxy || 'none'}" reason="${reason}"`);
                     return null;
                 });
         });
+
         return new Promise(resolve => {
             let done = false, completed = 0;
             promises.forEach(p => p.then(r => {
                 completed++;
-                if (!done && r) { done = true; resolve(r); return; }
+                if (!done && r) {
+                    done = true;
+                    batchCtrl.abort(); // 成功したので残りをキャンセル
+                    resolve(r);
+                    return;
+                }
                 if (completed === promises.length && !done) { done = true; resolve(null); }
             }));
-            setTimeout(() => { if (!done) { done = true; resolve(null); } }, timeoutMs + 500);
+            setTimeout(() => { if (!done) { done = true; batchCtrl.abort(); resolve(null); } }, timeoutMs + 500);
         });
     }
 
     // ---- Wista方式メインフェッチ: キャッシュ→静的プロキシバッチ→GitHubプロキシ ----
     // excludeCombos: [{ instance, proxy }, ...] を指定するとその組み合わせをすべてスキップ
     async function clientSideInvidiousRace(excludeCombos) {
+        // 前回のレースが残っていたら中止
+        if (_raceAbortController) _raceAbortController.abort();
+        _raceAbortController = new AbortController();
+        const signal = _raceAbortController.signal;
+
         const excluded = excludeCombos || [];
-        // 指定プロキシで除外すべきインスタンスのセットを返す
         const excludedInstancesFor = (proxy) =>
             new Set(excluded.filter(c => c.proxy === proxy).map(c => c.instance));
-        // バッチから除外インスタンスを取り除く
         const filterBatch = (batch, proxy) => {
             const ex = excludedInstancesFor(proxy);
             if (!ex.size) return batch;
@@ -703,37 +725,43 @@
             const proxy = CORS_PROXIES_STATIC[0];
             const batch = filterBatch(working, proxy);
             if (batch.length > 0) {
-                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT);
-                if (r) { console.log('[Invidious] Fast path hit:', r.instance); return r; }
+                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT, signal);
+                if (r) { console.log('[Invidious] Fast path hit:', r.instance); _raceAbortController.abort(); return r; }
             }
         }
 
         // フルサーチ: 全インスタンスをバッチ分割×各静的プロキシ
         for (const proxy of CORS_PROXIES_STATIC) {
+            if (signal.aborted) return null;
             for (let i = 0; i < Math.ceil(all.length / INV_BATCH_SIZE); i++) {
+                if (signal.aborted) return null;
                 const rawBatch = all.slice(i * INV_BATCH_SIZE, (i + 1) * INV_BATCH_SIZE);
                 const batch = filterBatch(rawBatch, proxy);
                 if (!batch.length) continue;
-                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT);
-                if (r) { console.log(`[Invidious] Hit proxy="${proxy}" instance="${r.instance}"`); return r; }
+                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT, signal);
+                if (r) { console.log(`[Invidious] Hit proxy="${proxy}" instance="${r.instance}"`); _raceAbortController.abort(); return r; }
             }
         }
 
         // GitHubフォールバック: 動的CORSプロキシリストを取得して再試行
+        if (signal.aborted) return null;
         console.log('[Invidious] Static proxies exhausted, fetching GitHub proxy list...');
         const githubProxies = await fetchGithubProxies();
+        if (signal.aborted) return null;
         if (githubProxies.length === 0) {
             console.error('[Invidious] No GitHub proxies available. Giving up.');
             return null;
         }
         console.log(`[Invidious] Trying ${githubProxies.length} GitHub proxies...`);
         for (const proxy of githubProxies) {
+            if (signal.aborted) return null;
             for (let i = 0; i < Math.ceil(all.length / INV_BATCH_SIZE); i++) {
+                if (signal.aborted) return null;
                 const rawBatch = all.slice(i * INV_BATCH_SIZE, (i + 1) * INV_BATCH_SIZE);
                 const batch = filterBatch(rawBatch, proxy);
                 if (!batch.length) continue;
-                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT);
-                if (r) { console.log(`[Invidious] GitHub proxy hit: ${proxy}`); return r; }
+                const r = await fetchInvidiousBatch(batch, proxy, INV_REQ_TIMEOUT, signal);
+                if (r) { console.log(`[Invidious] GitHub proxy hit: ${proxy}`); _raceAbortController.abort(); return r; }
             }
         }
 
@@ -753,6 +781,7 @@
         if (type !== 'invidious') {
             document.getElementById('btn-reload-instance').style.display = 'none';
             _hideLogArea();
+            if (_raceAbortController) { _raceAbortController.abort(); _raceAbortController = null; }
         }
 
         if (type === 'ytdlp') {
