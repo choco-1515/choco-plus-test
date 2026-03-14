@@ -160,7 +160,7 @@ def parse_iso8601_duration(duration_str):
             hours = int(hours) if hours else 0
             minutes = int(minutes) if minutes else 0
             seconds = int(seconds) if seconds else 0
-            
+
             if hours > 0:
                 return f"{hours}:{minutes:02d}:{seconds:02d}"
             else:
@@ -203,7 +203,7 @@ def search_youtube(query, page_token=None, proxy_type="img.youtube.com", search_
                             'published_at': item['snippet']['publishedAt'],
                             'duration': ''
                         })
-                
+
                 # Fetch video statistics and duration to get view count and length
                 if video_ids and search_type == "video":
                     try:
@@ -222,7 +222,7 @@ def search_youtube(query, page_token=None, proxy_type="img.youtube.com", search_
                                         result['views'] = f"{view_count/1000:.1f}K"
                                     else:
                                         result['views'] = str(view_count)
-                                    
+
                                     duration = item.get('contentDetails', {}).get('duration', '')
                                     result['duration'] = parse_iso8601_duration(duration)
                     except Exception as e:
@@ -241,13 +241,13 @@ def index():
     # Get preferences from cookies or set defaults
     proxy_type = request.cookies.get('proxy_type', 'wsrv.nl')
     search_mode = request.cookies.get('search_mode', 'inv_first')
-    
+
     response = make_response(render_template('index.html', proxy_type=proxy_type, search_mode=search_mode))
-    
+
     # Set default cookies
     response.set_cookie('proxy_type', proxy_type, max_age=2592000)  # 30 days
     response.set_cookie('search_mode', search_mode, max_age=2592000)  # 30 days
-    
+
     return response
 
 @app.route('/search')
@@ -259,10 +259,10 @@ def search():
     proxy_type = request.cookies.get('proxy_type', 'wsrv.nl')
     search_type = request.cookies.get('search_type', 'video')
     date_format = request.cookies.get('date_format', 'ago')
-    
+
     # Track which source provided the results (invidious or youtube)
     search_source = 'youtube'
-    
+
     if not query:
         response = make_response(render_template('search.html', results=[], query="", proxy_type=proxy_type, mode=mode, search_type=search_type, date_format=date_format, search_source=search_source))
         response.set_cookie('proxy_type', proxy_type, max_age=2592000)
@@ -270,10 +270,10 @@ def search():
         response.set_cookie('search_type', search_type, max_age=2592000)
         response.set_cookie('date_format', date_format, max_age=2592000)
         return response
-    
+
     results = None
     next_page = None
-    
+
     if mode == 'inv_first':
         results, next_page = search_invidious(query, page, proxy_type, search_type)
         if results:
@@ -287,7 +287,7 @@ def search():
         if not results:
             results, next_page = search_invidious(query, page, proxy_type, search_type)
             search_source = 'invidious'
-    
+
     response = make_response(render_template('search.html', results=results if results else [], query=query, mode=mode, next_page=next_page, page=page, proxy_type=proxy_type, search_type=search_type, date_format=date_format, search_source=search_source))
     response.set_cookie('proxy_type', proxy_type, max_age=2592000)
     response.set_cookie('search_mode', mode, max_age=2592000)
@@ -298,16 +298,16 @@ def search():
 def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
     """
     日本トレンドをカテゴリ別に取得します
-    
+
     Args:
         category: 'all' (全て), 'game' (ゲーム), 'music' (音楽)
         proxy_type: サムネイルプロキシの種類
-    
+
     Returns:
         トレンド動画のリスト
     """
     results = []
-    
+
     try:
         if category == 'all':
             # 全てカテゴリ: wakameリポジトリから取得
@@ -315,11 +315,11 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
         else:
             # ゲーム・音楽: ajgpwリポジトリから取得
             url = "https://raw.githubusercontent.com/ajgpw/youtubedata/refs/heads/main/trend-base64.json"
-        
+
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            
+
             # カテゴリ別に対応するキーを決定
             if category == 'all':
                 # wakameリポジトリの場合は'trending'キーを使用
@@ -333,13 +333,13 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
             else:
                 # デフォルト
                 trending_list = data.get('trending', data) if isinstance(data, dict) else data
-            
+
             video_ids = []
             for item in trending_list:
                 v_id = item.get('id') or item.get('videoId')
                 if not v_id: continue
                 video_ids.append(v_id)
-                
+
                 published = item.get('published') or item.get('publishedAt') or item.get('uploadedAt') or ''
                 results.append({
                     'id': v_id,
@@ -350,7 +350,7 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
                     'views': 'N/A',
                     'published_at': published
                 })
-            
+
             # Fetch duration and view count from YouTube API
             if video_ids:
                 for key in YOUTUBE_API_KEYS:
@@ -365,12 +365,12 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
                                     item = stats_map[result['id']]
                                     duration = item.get('contentDetails', {}).get('duration', '')
                                     result['duration'] = parse_iso8601_duration(duration)
-                                    
+
                                     # Check if live
                                     is_live = item.get('contentDetails', {}).get('projection', None) == 'live'
                                     if is_live:
                                         result['duration'] = 'LIVE'
-                                    
+
                                     view_count = int(item.get('statistics', {}).get('viewCount', 0))
                                     if view_count >= 1000000:
                                         result['views'] = f"{view_count/1000000:.1f}M"
@@ -385,7 +385,7 @@ def get_japan_trend_by_category(category='all', proxy_type='self-hosted'):
     except Exception as e:
         logger.warning(f"Error fetching JP trend (category={category}): {e}")
         pass
-    
+
     return results
 
 @app.route('/trend')
@@ -395,11 +395,11 @@ def trend():
     date_format = request.cookies.get('date_format', 'ago')
     jp_category = request.cookies.get('trend_category', 'all')
     results = []
-    
+
     # For non-JP regions, force 'ago' format only
     if region != 'JP':
         date_format = 'ago'
-    
+
     if region == 'JP':
         results = get_japan_trend_by_category(jp_category, proxy_type)
     else:
@@ -418,7 +418,7 @@ def trend():
                             if not v_id:
                                 continue
                             video_ids.append(v_id)
-                            
+
                             length_seconds = item.get('lengthSeconds')
                             duration = format_time_seconds(length_seconds) if length_seconds else ''
                             view_count = item.get('viewCount', 0)
@@ -499,6 +499,9 @@ _invidious_working_cache = []  # 動作済みインスタンスのメモリキ�
 def invidious_stream(video_id):
     """Wista方式: 全ストリーム専用インスタンスに並行レースリクエストして最速レスポンスのストリームを返す"""
     global _invidious_working_cache
+    # ?exclude=https://inst1.example.com,https://inst2.example.com で除外
+    exclude_param = request.args.get('exclude', '')
+    exclude_set = set(u.strip() for u in exclude_param.split(',') if u.strip())
     ERROR_KEYWORDS = ["shutdown", "<!DOCTYPE", "<html", "temporarily unavailable", "maintenance"]
     YOUTUBE_RESTRICT_KEYWORDS = ["protect our community", "Sign in to confirm", "age-restricted",
                                   "This video is unavailable", "not available in your country"]
@@ -631,9 +634,9 @@ def invidious_stream(video_id):
             logger.debug(f"Invidious stream error ({instance}): {e}")
         return None
 
-    # 動作済みキャッシュを優先、残りをランダム順で追加
-    cached = [i for i in _invidious_working_cache if i in INVIDIOUS_STREAM_INSTANCES]
-    rest = [i for i in INVIDIOUS_STREAM_INSTANCES if i not in cached]
+    # 動作済みキャッシュを優先、残りをランダム順で追加（除外リストを除く）
+    cached = [i for i in _invidious_working_cache if i in INVIDIOUS_STREAM_INSTANCES and i not in exclude_set]
+    rest = [i for i in INVIDIOUS_STREAM_INSTANCES if i not in cached and i not in exclude_set]
     random.shuffle(rest)
     instances = cached + rest
 
@@ -678,6 +681,7 @@ def invidious_stream(video_id):
             'isLive': result.get('isLive', False),
             'title': result.get('title', ''),
             'author': result.get('author', ''),
+            'instance': result.get('instance', ''),
         })
 
     if youtube_restricted:
@@ -849,7 +853,7 @@ def format_time_seconds(seconds):
 
 def format_date_with_cookie(iso_date_str, date_format=None, is_invidious_text=False):
     """Format ISO 8601 date based on cookie preference or parameter
-    
+
     Args:
         iso_date_str: ISO 8601 date string or Invidious publishedText
         date_format: 'ago' or 'date'
@@ -857,11 +861,11 @@ def format_date_with_cookie(iso_date_str, date_format=None, is_invidious_text=Fa
     """
     if not iso_date_str:
         return ""
-    
+
     # If it's already Invidious formatted text (like "1 month ago"), return as-is
     if is_invidious_text:
         return iso_date_str
-    
+
     try:
         from datetime import datetime
         # Parse ISO 8601 format
@@ -869,21 +873,21 @@ def format_date_with_cookie(iso_date_str, date_format=None, is_invidious_text=Fa
             dt = datetime.fromisoformat(iso_date_str.replace('Z', '+00:00'))
         else:
             dt = datetime.fromisoformat(iso_date_str)
-        
+
         # If format not specified, default to 'ago'
         if date_format is None:
             date_format = 'ago'
-        
+
         # YYYY-MM-DD format
         if date_format == 'date':
             return dt.strftime('%Y-%m-%d')
-        
+
         # ~ago format (default)
         now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.utcnow()
         delta = now - dt
         days = delta.days
         seconds = delta.total_seconds()
-        
+
         if seconds < 60:
             return "now"
         elif seconds < 3600:
@@ -938,11 +942,11 @@ def channel(channel_id):
     all_videos = []
     videos = []
     shorts = []
-    
+
     try:
         channel_data = None
         channel_source = None
-        
+
         # Try YouTube API first
         for key in YOUTUBE_API_KEYS:
             try:
@@ -957,7 +961,7 @@ def channel(channel_id):
             except Exception as e:
                 logger.debug(f"Error fetching channel info: {e}")
                 continue
-        
+
         # Fallback to Invidious if YouTube API fails
         if not channel_data:
             instances = INVIDIOUS_INSTANCES.copy()
@@ -978,14 +982,14 @@ def channel(channel_id):
         uploads_playlist_id = None
         if channel_source == 'youtube' and channel_data:
             uploads_playlist_id = f"UU{channel_id[2:]}"
-        
+
         for key in YOUTUBE_API_KEYS:
             try:
                 if uploads_playlist_id:
                     url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={uploads_playlist_id}&maxResults=50&key={key}"
                 else:
                     url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={channel_id}&type=video&order=date&maxResults=50&key={key}"
-                
+
                 response = requests.get(url, timeout=5)
                 if response.status_code == 200:
                     data = response.json()
@@ -1008,7 +1012,7 @@ def channel(channel_id):
                         except KeyError as e:
                             logger.debug(f"Error parsing video item: {e}")
                             continue
-                    
+
                     # Fetch video details to get duration and statistics
                     if video_ids:
                         try:
@@ -1033,7 +1037,7 @@ def channel(channel_id):
             except Exception as e:
                 logger.debug(f"Error fetching channel videos: {e}")
                 continue
-        
+
         # If YouTube API videos fetch failed, try Invidious
         if not all_videos and channel_source:
             instances = INVIDIOUS_INSTANCES.copy()
@@ -1072,7 +1076,7 @@ def channel(channel_id):
                 shorts.append(video)
             else:
                 videos.append(video)
-        
+
         if channel_data:
             channel = {}
             if channel_source == 'youtube':
@@ -1083,12 +1087,12 @@ def channel(channel_id):
                         thumbnails = channel_data['snippet'].get('thumbnails', {})
                         if thumbnails:
                             channel['channelIcon'] = thumbnails.get('high', {}).get('url') or thumbnails.get('default', {}).get('url')
-                    
+
                     if 'statistics' in channel_data:
                         sub_count = channel_data['statistics'].get('subscriberCount')
                         if sub_count:
                             channel['subscribers'] = int(sub_count)
-                        
+
                         view = channel_data['statistics'].get('viewCount')
                         if view:
                             channel['totalViews'] = int(view)
@@ -1101,7 +1105,7 @@ def channel(channel_id):
                     thumbnails = channel_data.get('authorThumbnails', [])
                     if thumbnails:
                         channel['channelIcon'] = thumbnails[0].get('url')
-                    
+
                     sub_count = channel_data.get('subCount')
                     if sub_count:
                         channel['subscribers'] = int(sub_count)
@@ -1117,12 +1121,12 @@ def channel(channel_id):
 def channel_more(channel_id):
     video_type = request.args.get('type', 'videos')
     offset = request.args.get('offset', 0, type=int)
-    
+
     all_videos = []
-    
+
     try:
         uploads_playlist_id = f"UU{channel_id[2:]}"
-        
+
         for key in YOUTUBE_API_KEYS:
             try:
                 url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={uploads_playlist_id}&maxResults=50&startIndex={offset+1}&key={key}"
@@ -1144,7 +1148,7 @@ def channel_more(channel_id):
                             })
                         except KeyError:
                             continue
-                    
+
                     if video_ids:
                         try:
                             details_url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id={','.join(video_ids)}&key={key}"
@@ -1164,7 +1168,7 @@ def channel_more(channel_id):
             except Exception as e:
                 logger.debug(f"Error fetching more videos: {e}")
                 continue
-        
+
         # Filter by type
         result_videos = []
         for video in all_videos:
@@ -1172,7 +1176,7 @@ def channel_more(channel_id):
                 result_videos.append(video)
             elif video_type == 'shorts' and video['is_short']:
                 result_videos.append(video)
-        
+
         return jsonify({'videos': result_videos})
     except Exception as e:
         logger.error(f"Error in channel_more: {e}")
