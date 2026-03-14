@@ -958,6 +958,14 @@
             return numB - numA;
         });
 
+        // 同じラベルの重複を除去（最初の1件を残す）
+        const seen = new Set();
+        filtered = filtered.filter(s => {
+            if (seen.has(s.quality)) return false;
+            seen.add(s.quality);
+            return true;
+        });
+
         filtered.forEach((stream, i) => {
             const wrap = document.createElement('div');
             wrap.className = 'quality-option-wrap';
