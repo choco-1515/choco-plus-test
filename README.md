@@ -16,7 +16,7 @@
 - invidiousの使用優先順位について　成功したインスタンスを保存して統計をあつめる(バックエンド取得の優先順位)
 - apiの使用有無（画質切り替え、音声切り替えなどに利用できる）
 - しあさんの"https://siawaseok.f5.si/streams/(videoid)" ←ストリームapi
-- yosshyの"https://yt-streamer-worker.yosshy-123.workers.dev/?id=(videoid)"　←invidious&intertube api
+- yosshyの"https://yt-streamer-worker.yosshy-123.workers.dev/?id=(videoid)" ←invidious&intertube api
 - crosproxyリスト ここまで来たらバックエンド取得に戻るよう促すように。
 #### edu再生
 - 使用パラメータについて githubとかも
