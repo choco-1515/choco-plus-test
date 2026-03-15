@@ -529,6 +529,7 @@
     let currentStreamType = 'ytdlp';
     let currentQualityFilter = 'mp4';
     let invidiousStreams = null;
+    let _selectedQualityPerFilter = { mp4: null, video: null, audio: null, hls: null };
     let ytdlpCachedUrl = null;
     let fetchSeq = 0;
     let currentInvidiousCombo = null;    // { instance, proxy } 最後に成功した組み合わせ
@@ -1199,14 +1200,16 @@
             return true;
         });
 
+        const _savedQ = _selectedQualityPerFilter[currentQualityFilter];
         filtered.forEach((stream, i) => {
             const wrap = document.createElement('div');
             wrap.className = 'quality-option-wrap';
 
             const btn = document.createElement('button');
-            btn.className = 'quality-option' + (i === 0 ? ' selected' : '');
+            const _isSelected = _savedQ ? stream.quality === _savedQ : i === 0;
+            btn.className = 'quality-option' + (_isSelected ? ' selected' : '');
             btn.textContent = stream.quality;
-            btn.onclick = () => playStream(stream);
+            btn.onclick = () => { _selectedQualityPerFilter[currentQualityFilter] = stream.quality; playStream(stream); };
 
             const chk = document.createElement('span');
             chk.className = 'quality-check';
@@ -1225,7 +1228,7 @@
         });
     }
 
-    // ---- 最初の画質を自動再生 ----
+    // ---- 最初の画質を自動再生（保存済みの画質があればそちらを優先）----
     function playFirstAvailable() {
         if (!invidiousStreams) return;
         let filtered;
@@ -1234,11 +1237,13 @@
         } else {
             filtered = invidiousStreams.filter(s => !s.isHLS && s.format === currentQualityFilter);
         }
-        if (filtered.length > 0) {
-            playStream(filtered[0]);
-        } else {
+        if (filtered.length === 0) {
             showError('このカテゴリには再生可能なストリームがありません');
+            return;
         }
+        const savedQ = _selectedQualityPerFilter[currentQualityFilter];
+        const target = (savedQ && filtered.find(s => s.quality === savedQ)) || filtered[0];
+        playStream(target);
     }
 
     // ---- 指定したストリームを再生 ----
