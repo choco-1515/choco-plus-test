@@ -1310,6 +1310,7 @@
             filtered = invidiousStreams.filter(s => !s.isHLS && s.format === currentQualityFilter);
         }
         if (filtered.length === 0) {
+            currentEmbedUrl = null;
             showError('このカテゴリには再生可能なストリームがありません');
             return;
         }
@@ -1322,6 +1323,8 @@
     function openCurrentStreamUrl() {
         if (currentEmbedUrl) {
             window.open(currentEmbedUrl, '_blank');
+        } else {
+            alert('動画URLが見つかりません');
         }
     }
 
