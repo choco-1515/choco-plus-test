@@ -442,6 +442,29 @@
         fill: currentColor;
     }
 
+    /* ---- コピートースト ---- */
+    #copy-toast {
+        position: fixed;
+        bottom: 32px;
+        left: 50%;
+        transform: translateX(-50%) translateY(16px);
+        background: #e8e8e8;
+        color: #111;
+        padding: 10px 20px;
+        border-radius: 24px;
+        font-size: 14px;
+        font-weight: 500;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s, transform 0.2s;
+        z-index: 9999;
+        white-space: nowrap;
+    }
+    #copy-toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+
     /* ---- 動画メタデータ枠（準備中） ---- */
     .video-desc-box {
         background: #1a1a1a;
@@ -576,6 +599,9 @@
                 <button class="reload-stream-btn" title="再読み込み" onclick="reloadCurrentStream()">
                     <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                 </button>
+                <button class="reload-stream-btn" title="動画リンクをコピー" onclick="copyVideoLink()">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                </button>
             </div>
             <!-- 動画メタデータ枠 -->
             <div class="video-desc-box">
@@ -597,6 +623,8 @@
         <div class="comment-placeholder">関連動画機能は準備中です</div>
     </div>
 </div>
+
+<div id="copy-toast">リンクをコピーしました</div>
 
 <script>
     const videoId = '{{ video_id }}';
@@ -1366,6 +1394,28 @@
         } else if (currentStreamType === 'nocookie') {
             loadNocookieStream();
         }
+    }
+
+    // ---- 動画ページのURLをクリップボードにコピー ----
+    function copyVideoLink() {
+        const url = window.location.href;
+        navigator.clipboard.writeText(url).then(() => {
+            const toast = document.getElementById('copy-toast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = url;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            const toast = document.getElementById('copy-toast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        });
     }
 
     // ---- 現在埋め込み中のURLを新しいタブで開く ----
