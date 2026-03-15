@@ -261,6 +261,67 @@
         to { transform: rotate(360deg); }
     }
 
+    /* ---- 動画再生について（折りたたみ枠） ---- */
+    .playback-info-box {
+        background: #1a1a1a;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .playback-info-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.15s;
+    }
+
+    .playback-info-header:hover {
+        background: #222;
+    }
+
+    .playback-info-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #ccc;
+    }
+
+    .playback-info-toggle {
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #aaa;
+        font-size: 18px;
+        line-height: 1;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+
+    .playback-info-toggle:hover {
+        background: #383838;
+        color: #fff;
+    }
+
+    .playback-info-body {
+        display: none;
+        padding: 0 16px 14px;
+        font-size: 13px;
+        color: #aaa;
+        border-top: 1px solid #2a2a2a;
+    }
+
+    .playback-info-body.open {
+        display: block;
+    }
+
     /* ---- 動画タイトル・チャンネル（カードなし、YouTube風） ---- */
     .video-metadata {
         display: flex;
@@ -408,6 +469,17 @@
             </div>
         </div>
 
+        <!-- 動画再生について -->
+        <div class="playback-info-box">
+            <div class="playback-info-header" onclick="togglePlaybackInfo()">
+                <span class="playback-info-title">動画再生について</span>
+                <span class="playback-info-toggle" id="playbackInfoToggle">＋</span>
+            </div>
+            <div class="playback-info-body" id="playbackInfoBody">
+                <p style="margin: 12px 0 0;">準備中</p>
+            </div>
+        </div>
+
         <!-- 動画タイトル・チャンネル・メタデータ -->
         <div class="video-metadata">
             <div class="video-title">{{ video_title if video_title else 'Video:' ~ video_id }}</div>
@@ -446,6 +518,13 @@
 <script>
     const videoId = '{{ video_id }}';
     const playerContainer = document.getElementById('playerContainer');
+
+    function togglePlaybackInfo() {
+        const body = document.getElementById('playbackInfoBody');
+        const btn = document.getElementById('playbackInfoToggle');
+        const isOpen = body.classList.toggle('open');
+        btn.textContent = isOpen ? '－' : '＋';
+    }
 
     let currentStreamType = 'ytdlp';
     let currentQualityFilter = 'mp4';
