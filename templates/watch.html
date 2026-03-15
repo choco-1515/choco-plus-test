@@ -501,6 +501,7 @@
                 <button class="quality-tab" onclick="switchQualityFilter('hls')" id="tab-hls">HLS</button>
                 <button id="btn-inv-log" onclick="toggleInvLog()" style="display:none;">ログ</button>
                 <button class="quality-tab" id="btn-reload-instance" onclick="reloadInvidiousWithDifferentInstance()" style="display:none;margin-left:auto;color:#f90;">別のインスタンスで読み込む</button>
+                <button class="quality-tab" id="btn-open-stream-url" onclick="openCurrentStreamUrl()" style="display:none;color:#adf;">動画が再生されない場合はこちら</button>
             </div>
             <div class="quality-options" id="qualityOptions"></div>
         </div>
@@ -591,6 +592,7 @@
     let currentInvidiousCombo = null;    // { instance, proxy } 最後に成功した組み合わせ
     let _usedInvidiousCombos = [];       // 過去に成功した組み合わせをすべて記録
     let _raceAbortController = null;     // 実行中のレースをキャンセルするコントローラ
+    let currentEmbedUrl = null;          // 現在プレイヤーに埋め込んでいるストリームURL
 
     // ---- コンソールログキャプチャ (Invidious取得中のログ表示用) ----
     const _invLogs = [];
@@ -959,6 +961,7 @@
         document.getElementById('qualitySelector').classList.toggle('show', type === 'invidious');
         if (type !== 'invidious') {
             document.getElementById('btn-reload-instance').style.display = 'none';
+            document.getElementById('btn-open-stream-url').style.display = 'none';
             _hideLogArea();
             if (_raceAbortController) { _raceAbortController.abort(); _raceAbortController = null; }
         }
@@ -1069,6 +1072,7 @@
         _closeLogOverlay();
         _showLogBtn();
         document.getElementById('btn-reload-instance').style.display = 'inline-block';
+        document.getElementById('btn-open-stream-url').style.display = 'inline-block';
     }
 
     // ---- GitHubフォールバック突入時の「絶望的」UI表示 ----
@@ -1099,6 +1103,7 @@
             // 以前に成功していたらボタンを再表示
             if (currentInvidiousCombo) {
                 document.getElementById('btn-reload-instance').style.display = 'inline-block';
+                document.getElementById('btn-open-stream-url').style.display = 'inline-block';
             }
             return;
         }
@@ -1162,6 +1167,7 @@
         invidiousStreams = null;
         currentInvidiousCombo = null;
         document.getElementById('btn-reload-instance').style.display = 'none';
+        document.getElementById('btn-open-stream-url').style.display = 'none';
         document.getElementById('qualityOptions').innerHTML = '';
         const seq = ++fetchSeq;
         showLoading('別のインスタンスを検索中...');
@@ -1312,8 +1318,16 @@
         playStream(target);
     }
 
+    // ---- 現在埋め込み中のURLを新しいタブで開く ----
+    function openCurrentStreamUrl() {
+        if (currentEmbedUrl) {
+            window.open(currentEmbedUrl, '_blank');
+        }
+    }
+
     // ---- 指定したストリームを再生 ----
     function playStream(stream) {
+        currentEmbedUrl = stream.url;
         document.querySelectorAll('.quality-option').forEach(btn => {
             btn.classList.toggle('selected', btn.textContent === stream.quality);
         });
