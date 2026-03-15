@@ -572,6 +572,12 @@
     }
 
     function _showLogBtn()  { document.getElementById('btn-inv-log').style.display = 'inline-block'; }
+    function _closeLogOverlay() {
+        const btn = document.getElementById('btn-inv-log');
+        const el  = document.getElementById('inv-log-overlay');
+        btn.classList.remove('log-open');
+        el.classList.remove('visible');
+    }
     function _hideLogArea() {
         const btn = document.getElementById('btn-inv-log');
         const el  = document.getElementById('inv-log-overlay');
@@ -1001,7 +1007,8 @@
         updateQualityTabs('mp4');
         renderQualityOptions();
         playFirstAvailable();
-        _hideLogArea();
+        _closeLogOverlay();
+        _showLogBtn();
         document.getElementById('btn-reload-instance').style.display = 'inline-block';
     }
 
