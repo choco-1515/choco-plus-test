@@ -1086,12 +1086,12 @@
 
     // ---- 別のインスタンス+プロキシの組み合わせで再取得 ----
     function reloadInvidiousWithDifferentInstance() {
-        // 現在成功している1組だけを除外
-        const excludeAll = currentInvidiousCombo ? [currentInvidiousCombo] : [];
-        // 除外インスタンスURL（バックエンド用）
-        const excludeInstances = currentInvidiousCombo && currentInvidiousCombo.instance !== 'backend'
-            ? [currentInvidiousCombo.instance]
-            : [];
+        // これまでに成功したコンボをすべて除外対象にする
+        const excludeAll = [..._usedInvidiousCombos];
+        // バックエンドへ渡す除外インスタンスURLリスト
+        const excludeInstances = _usedInvidiousCombos
+            .map(c => c.instance)
+            .filter(i => i && i !== 'backend');
 
         invidiousStreams = null;
         currentInvidiousCombo = null;
