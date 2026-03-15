@@ -995,7 +995,7 @@
     // ---- Invidiousストリーム取得成功時の共通処理 ----
     function _applyInvidiousResult(result) {
         invidiousStreams = result.streams;
-        currentInvidiousCombo = { instance: result.instance || 'backend', proxy: result.proxy || 'backend' };
+        currentInvidiousCombo = { instance: result.instance || 'backend', proxy: result.proxy ?? 'backend' };
         _usedInvidiousCombos.push(currentInvidiousCombo);
         currentQualityFilter = 'mp4';
         updateQualityTabs('mp4');
