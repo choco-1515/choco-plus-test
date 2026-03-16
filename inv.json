@@ -1,0 +1,10 @@
+const INVIDIOUS_INSTANCES = [
+  'https://inv.nadeko.net',
+  'https://invidious.f5.si',
+  'https://invidious.lunivers.trade',
+  'https://iv.melmac.space',
+  'https://yt.omada.cafe',
+  'https://invidious.nerdvpn.de',
+  'https://invidious.tiekoetter.com',
+  'https://yewtu.be',
+];
