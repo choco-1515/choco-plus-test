@@ -1203,12 +1203,12 @@
 
             const chk = document.createElement('span');
             chk.className = 'quality-check';
-            chk.textContent = _getCheck(stream.quality) ? '✅' : '□';
+            chk.textContent = _ytdlpGetCheck(stream.quality) ? '✅' : '□';
             chk.title = 'メモ用チェック';
             chk.onclick = (e) => {
                 e.stopPropagation();
-                const next = !_getCheck(stream.quality);
-                _setCheck(stream.quality, next);
+                const next = !_ytdlpGetCheck(stream.quality);
+                _ytdlpSetCheck(stream.quality, next);
                 chk.textContent = next ? '✅' : '□';
             };
 
@@ -1410,9 +1410,9 @@
         });
     }
 
-    // ---- チェック状態の保存・読み込み（動画IDが変わるとリセット）----
+    // ---- チェック状態の保存・読み込み（Invidious用、動画IDが変わるとリセット）----
     function _checkKey(label) {
-        return `qcheck_${videoId}_${label}`;
+        return `qcheck_inv_${videoId}_${label}`;
     }
     function _getCheck(label) {
         return sessionStorage.getItem(_checkKey(label)) === '1';
@@ -1420,6 +1420,18 @@
     function _setCheck(label, val) {
         if (val) sessionStorage.setItem(_checkKey(label), '1');
         else sessionStorage.removeItem(_checkKey(label));
+    }
+
+    // ---- チェック状態の保存・読み込み（ytdlp用、Invidiousとは独立）----
+    function _ytdlpCheckKey(label) {
+        return `qcheck_ytdlp_${videoId}_${label}`;
+    }
+    function _ytdlpGetCheck(label) {
+        return sessionStorage.getItem(_ytdlpCheckKey(label)) === '1';
+    }
+    function _ytdlpSetCheck(label, val) {
+        if (val) sessionStorage.setItem(_ytdlpCheckKey(label), '1');
+        else sessionStorage.removeItem(_ytdlpCheckKey(label));
     }
 
     // ---- 画質オプション描画 ----
