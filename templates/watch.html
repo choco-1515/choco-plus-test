@@ -553,6 +553,17 @@
             <button class="stream-btn" onclick="switchStream('nocookie')" id="btn-nocookie">nocookie再生</button>
         </div>
 
+        <!-- ytdlp 画質セレクタ -->
+        <div class="quality-selector" id="ytdlpQualitySelector">
+            <div class="quality-tabs">
+                <button class="quality-tab active" onclick="switchYtdlpQualityFilter('mp4')" id="ytdlp-tab-mp4">MP4</button>
+                <button class="quality-tab" onclick="switchYtdlpQualityFilter('video')" id="ytdlp-tab-video">映像のみ</button>
+                <button class="quality-tab" onclick="switchYtdlpQualityFilter('audio')" id="ytdlp-tab-audio">音声のみ</button>
+                <button class="quality-tab" onclick="switchYtdlpQualityFilter('hls')" id="ytdlp-tab-hls">HLS</button>
+            </div>
+            <div class="quality-options" id="ytdlpQualityOptions"></div>
+        </div>
+
         <!-- Invidious 画質セレクタ -->
         <div class="quality-selector" id="qualitySelector">
             <div class="quality-tabs">
@@ -664,6 +675,11 @@
     let currentEmbedUrl = null;          // 現在プレイヤーに埋め込んでいるストリームURL
     let _showAllStreams = false;          // 全項目読み込みモード（重複除去をスキップ）
     let _currentPlayingStream = null;    // 現在再生中のストリームオブジェクト参照
+
+    // ytdlp 専用変数
+    let ytdlpStreams = null;
+    let ytdlpCurrentFilter = 'mp4';
+    let ytdlpSelectedQuality = { mp4: null, video: null, audio: null, hls: null };
 
     // ---- コンソールログキャプチャ (Invidious取得中のログ表示用) ----
     const _invLogs = [];
@@ -1029,6 +1045,7 @@
         document.getElementById('btn-ytdlp').classList.toggle('active', type === 'ytdlp');
         document.getElementById('btn-invidious').classList.toggle('active', type === 'invidious');
         document.getElementById('btn-nocookie').classList.toggle('active', type === 'nocookie');
+        document.getElementById('ytdlpQualitySelector').classList.toggle('show', type === 'ytdlp');
         document.getElementById('qualitySelector').classList.toggle('show', type === 'invidious');
         if (type !== 'invidious') {
             document.getElementById('btn-reload-instance').style.display = 'none';
@@ -1098,13 +1115,9 @@
 
     // ---- ytdlp ストリーム ----
     function loadYtdlpStream() {
-        if (ytdlpCachedUrl) {
-            playerContainer.innerHTML = `<video controls autoplay><source src="${ytdlpCachedUrl}" type="video/mp4"></video>`;
-            const v = playerContainer.querySelector('video');
-            attachMediaRetry(v, () => {
-                playerContainer.innerHTML = `<video controls autoplay><source src="${ytdlpCachedUrl}" type="video/mp4"></video>`;
-                return playerContainer.querySelector('video');
-            }, 0);
+        if (ytdlpStreams) {
+            renderYtdlpQualityOptions();
+            playFirstYtdlpAvailable();
             return;
         }
         const seq = ++fetchSeq;
@@ -1113,14 +1126,12 @@
             .then(r => r.json())
             .then(data => {
                 if (seq !== fetchSeq || currentStreamType !== 'ytdlp') return;
-                if (data.stream_url) {
-                    ytdlpCachedUrl = data.stream_url;
-                    playerContainer.innerHTML = `<video controls autoplay><source src="${ytdlpCachedUrl}" type="video/mp4"></video>`;
-                    const v = playerContainer.querySelector('video');
-                    attachMediaRetry(v, () => {
-                        playerContainer.innerHTML = `<video controls autoplay><source src="${ytdlpCachedUrl}" type="video/mp4"></video>`;
-                        return playerContainer.querySelector('video');
-                    }, 0);
+                if (data.streams && data.streams.length > 0) {
+                    ytdlpStreams = data.streams;
+                    ytdlpCurrentFilter = 'mp4';
+                    updateYtdlpQualityTabs('mp4');
+                    renderYtdlpQualityOptions();
+                    playFirstYtdlpAvailable();
                 } else {
                     showError('ストリームの取得に失敗しました。再読み込みしてください');
                 }
@@ -1129,6 +1140,89 @@
                 if (seq !== fetchSeq || currentStreamType !== 'ytdlp') return;
                 showError('ストリームの取得に失敗しました。再読み込みしてください');
             });
+    }
+
+    // ---- ytdlp 画質フィルタ切り替え ----
+    function switchYtdlpQualityFilter(filter) {
+        ytdlpCurrentFilter = filter;
+        updateYtdlpQualityTabs(filter);
+        renderYtdlpQualityOptions();
+        playFirstYtdlpAvailable();
+    }
+
+    function updateYtdlpQualityTabs(filter) {
+        ['mp4', 'video', 'audio', 'hls'].forEach(t => {
+            document.getElementById('ytdlp-tab-' + t).classList.toggle('active', t === filter);
+        });
+    }
+
+    // ---- ytdlp 画質オプション描画 ----
+    function renderYtdlpQualityOptions() {
+        const optionsDiv = document.getElementById('ytdlpQualityOptions');
+        optionsDiv.innerHTML = '';
+        if (!ytdlpStreams) return;
+
+        let filtered;
+        if (ytdlpCurrentFilter === 'hls') {
+            filtered = ytdlpStreams.filter(s => s.isHLS);
+        } else {
+            filtered = ytdlpStreams.filter(s => !s.isHLS && s.format === ytdlpCurrentFilter);
+        }
+
+        filtered.sort((a, b) => {
+            const numA = parseInt(a.quality) || 0;
+            const numB = parseInt(b.quality) || 0;
+            return numB - numA;
+        });
+
+        if (filtered.length === 0) {
+            const msg = document.createElement('div');
+            msg.style.cssText = 'color:#aaa;font-size:13px;padding:8px 4px;';
+            msg.textContent = 'このカテゴリには再生可能なストリームがありません';
+            optionsDiv.appendChild(msg);
+            return;
+        }
+
+        const savedQ = ytdlpSelectedQuality[ytdlpCurrentFilter];
+        filtered.forEach((stream, i) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'quality-option-wrap';
+
+            const btn = document.createElement('button');
+            const isSelected = savedQ ? stream.quality === savedQ : i === 0;
+            btn.className = 'quality-option' + (isSelected ? ' selected' : '');
+            btn.dataset.streamUrl = stream.url;
+            btn.textContent = stream.quality;
+            btn.onclick = () => {
+                ytdlpSelectedQuality[ytdlpCurrentFilter] = stream.quality;
+                document.querySelectorAll('#ytdlpQualityOptions .quality-option').forEach(b => {
+                    b.classList.toggle('selected', b.dataset.streamUrl === stream.url);
+                });
+                playStream(stream);
+            };
+
+            wrap.appendChild(btn);
+            optionsDiv.appendChild(wrap);
+        });
+    }
+
+    // ---- ytdlp 最初の画質を自動再生 ----
+    function playFirstYtdlpAvailable() {
+        if (!ytdlpStreams) return;
+        let filtered;
+        if (ytdlpCurrentFilter === 'hls') {
+            filtered = ytdlpStreams.filter(s => s.isHLS);
+        } else {
+            filtered = ytdlpStreams.filter(s => !s.isHLS && s.format === ytdlpCurrentFilter);
+        }
+        if (filtered.length === 0) {
+            currentEmbedUrl = null;
+            showError('このカテゴリには再生可能なストリームがありません');
+            return;
+        }
+        const savedQ = ytdlpSelectedQuality[ytdlpCurrentFilter];
+        const target = (savedQ && filtered.find(s => s.quality === savedQ)) || filtered[0];
+        playStream(target);
     }
 
     // ---- Invidiousストリーム取得成功時の共通処理 ----
@@ -1434,8 +1528,10 @@
             _hideLogArea();
             loadInvidiousStream();
         } else if (currentStreamType === 'ytdlp') {
+            ytdlpStreams = null;
             ytdlpCachedUrl = null;
             currentEmbedUrl = null;
+            document.getElementById('ytdlpQualityOptions').innerHTML = '';
             loadYtdlpStream();
         } else if (currentStreamType === 'nocookie') {
             loadNocookieStream();
