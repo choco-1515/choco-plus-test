@@ -1201,7 +1201,19 @@
                 playStream(stream);
             };
 
+            const chk = document.createElement('span');
+            chk.className = 'quality-check';
+            chk.textContent = _getCheck(stream.quality) ? '✅' : '□';
+            chk.title = 'メモ用チェック';
+            chk.onclick = (e) => {
+                e.stopPropagation();
+                const next = !_getCheck(stream.quality);
+                _setCheck(stream.quality, next);
+                chk.textContent = next ? '✅' : '□';
+            };
+
             wrap.appendChild(btn);
+            wrap.appendChild(chk);
             optionsDiv.appendChild(wrap);
         });
     }
