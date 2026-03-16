@@ -805,13 +805,13 @@ def fetch_min2_tube_stream(api_url, video_id):
         if entry:
             streams.append(entry)
 
-        # --- videoUrl（映像のみ）---
-        entry = _min2_stream_entry(
-            data.get('videoUrl') or data.get('video_url'),
-            seen_urls, '', 0, 'mp4', False, True, False
-        )
-        if entry:
-            streams.append(entry)
+        # --- videoUrl / highstreamUrl（映像のみ）---
+        for vkey in ('videoUrl', 'video_url', 'highstreamUrl', 'highStreamUrl', 'high_stream_url'):
+            entry = _min2_stream_entry(
+                data.get(vkey), seen_urls, '', 0, 'mp4', False, True, False
+            )
+            if entry:
+                streams.append(entry)
 
         # --- hlsUrl ---
         entry = _min2_stream_entry(
