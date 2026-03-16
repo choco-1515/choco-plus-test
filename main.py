@@ -462,17 +462,40 @@ def proxy_thumbnail(video_id):
     ), 200, {'Content-Type': 'image/gif'}
 
 
-STREAM_APIS = [
-    "https://xeroxyt-nt-apiv1-0ydt.onrender.com",
-    "https://xeroxyt-nt-apiv1-5vsz.onrender.com",
-    "https://xeroxyt-nt-apiv1-m28t.onrender.com",
-    "https://rt5k4d-3000.csb.app",
-    "https://vpdzyc-3000.csb.app"
-]
+XEROX_API_LIST_URL = "https://raw.githubusercontent.com/choco-1515/About-youtube/refs/heads/main/stream/xerox-api.json"
+_xerox_api_list_cache = None
+_xerox_api_list_cache_time = 0
 
 
-def fetch_stream_from_api(api_url, video_id):
-    """Fetch stream URL from a single API"""
+def fetch_xerox_api_list():
+    """Fetch list of xerox API base URLs from GitHub JSON (cached 5 minutes)"""
+    import time
+    global _xerox_api_list_cache, _xerox_api_list_cache_time
+    now = time.time()
+    if _xerox_api_list_cache and (now - _xerox_api_list_cache_time) < 300:
+        return _xerox_api_list_cache
+    try:
+        response = requests.get(XEROX_API_LIST_URL, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                urls = [item if isinstance(item, str) else item.get('url', '') for item in data]
+            elif isinstance(data, dict):
+                urls = data.get('apis', data.get('urls', []))
+            else:
+                urls = []
+            urls = [u for u in urls if u]
+            if urls:
+                _xerox_api_list_cache = urls
+                _xerox_api_list_cache_time = now
+                return urls
+    except Exception:
+        pass
+    return _xerox_api_list_cache or []
+
+
+def fetch_xerox_stream(api_url, video_id):
+    """Fetch stream data from a single xerox API and return structured streams list"""
     try:
         response = requests.get(
             f"{api_url}/stream?id={video_id}",
@@ -480,14 +503,28 @@ def fetch_stream_from_api(api_url, video_id):
         )
         if response.status_code == 200:
             data = response.json()
+            streams = []
             if data.get('streamingUrl'):
-                return data.get('streamingUrl')
+                streams.append({
+                    'url': data['streamingUrl'],
+                    'quality': 'Auto',
+                    'format': 'mp4',
+                    'container': 'mp4',
+                    'hasAudio': True,
+                    'hasVideo': True,
+                    'isHLS': False
+                })
             elif data.get('url'):
-                return data.get('url')
-            elif data.get('videos'):
-                videos = data.get('videos', [])
-                if videos and len(videos) > 0:
-                    return videos[0].get('url')
+                streams.append({
+                    'url': data['url'],
+                    'quality': 'Auto',
+                    'format': 'mp4',
+                    'container': 'mp4',
+                    'hasAudio': True,
+                    'hasVideo': True,
+                    'isHLS': False
+                })
+            return streams if streams else None
     except Exception:
         pass
     return None
@@ -694,32 +731,33 @@ def invidious_stream(video_id):
 
 @app.route('/api/stream/<video_id>')
 def get_stream(video_id):
-    """Fetch stream URL from multiple APIs in parallel"""
-    stream_url = None
+    """Fetch streams from xerox APIs in parallel, return first success"""
+    api_list = fetch_xerox_api_list()
+    if not api_list:
+        return jsonify({'error': 'APIリストを取得できませんでした'}), 503
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    result_streams = None
+
+    with ThreadPoolExecutor(max_workers=len(api_list)) as executor:
         futures = {
-            executor.submit(
-                fetch_stream_from_api,
-                api,
-                video_id
-            ): api
-            for api in STREAM_APIS
+            executor.submit(fetch_xerox_stream, api, video_id): api
+            for api in api_list
         }
-
         for future in as_completed(futures):
             try:
-                result = future.result()
-                if result:
-                    stream_url = result
+                streams = future.result()
+                if streams:
+                    result_streams = streams
+                    for f in futures:
+                        f.cancel()
                     break
             except Exception:
                 continue
 
-    if stream_url:
-        return jsonify({'stream_url': stream_url})
+    if result_streams:
+        return jsonify({'streams': result_streams})
     else:
-        return jsonify({'error': 'Could not fetch stream'}), 503
+        return jsonify({'error': 'ストリームを取得できませんでした'}), 503
 
 
 
