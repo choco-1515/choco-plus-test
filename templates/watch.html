@@ -663,6 +663,7 @@
     let _raceAbortController = null;     // 実行中のレースをキャンセルするコントローラ
     let currentEmbedUrl = null;          // 現在プレイヤーに埋め込んでいるストリームURL
     let _showAllStreams = false;          // 全項目読み込みモード（重複除去をスキップ）
+    let _currentPlayingStream = null;    // 現在再生中のストリームオブジェクト参照
 
     // ---- コンソールログキャプチャ (Invidious取得中のログ表示用) ----
     const _invLogs = [];
@@ -1236,6 +1237,7 @@
 
         invidiousStreams = null;
         currentInvidiousCombo = null;
+        _currentPlayingStream = null;
         document.getElementById('btn-reload-instance').style.display = 'none';
         document.getElementById('btn-open-stream-url').style.display = 'none';
         document.getElementById('qualityOptions').innerHTML = '';
@@ -1350,8 +1352,12 @@
             wrap.className = 'quality-option-wrap';
 
             const btn = document.createElement('button');
-            const _isSelected = _savedQ ? stream.quality === _savedQ : i === 0;
+            // ストリームオブジェクト参照で選択状態を判定（同ラベルが複数あっても正確に1つだけハイライト）
+            const _isSelected = _currentPlayingStream
+                ? stream === _currentPlayingStream
+                : (_savedQ ? stream.quality === _savedQ : i === 0);
             btn.className = 'quality-option' + (_isSelected ? ' selected' : '');
+            btn.dataset.streamUrl = stream.url;
             btn.textContent = stream.quality;
             btn.onclick = () => { _selectedQualityPerFilter[currentQualityFilter] = stream.quality; playStream(stream); };
 
@@ -1412,6 +1418,7 @@
             _usedInvidiousCombos = [];
             currentInvidiousCombo = null;
             currentEmbedUrl = null;
+            _currentPlayingStream = null;
             _invLogs.length = 0;
             _showAllStreams = false;
             document.getElementById('btn-reload-instance').style.display = 'none';
@@ -1462,8 +1469,10 @@
     // ---- 指定したストリームを再生 ----
     function playStream(stream) {
         currentEmbedUrl = stream.url;
+        _currentPlayingStream = stream;
+        // URLで正確に1つだけ選択状態にする（同ラベル重複ボタン問題の解消）
         document.querySelectorAll('.quality-option').forEach(btn => {
-            btn.classList.toggle('selected', btn.textContent === stream.quality);
+            btn.classList.toggle('selected', btn.dataset.streamUrl === stream.url);
         });
 
         // 現在の再生位置を保存
