@@ -494,6 +494,51 @@ def fetch_xerox_api_list():
     return _xerox_api_list_cache or []
 
 
+def _xerox_build_label(url, quality='', height=0, container='mp4', is_audio=False):
+    """URLパラメータと形式情報からボタン用ラベルを生成する"""
+    from urllib.parse import urlparse, parse_qs
+    import re
+    try:
+        params = parse_qs(urlparse(url).query)
+
+        # ビットレートを clen と dur から計算
+        bitrate_str = ''
+        clen = params.get('clen', [None])[0]
+        dur = params.get('dur', [None])[0]
+        if clen and dur:
+            try:
+                kbps = round(int(clen) * 8 / float(dur) / 1000)
+                bitrate_str = f'{kbps}kbps'
+            except Exception:
+                pass
+
+        # mime タイプを取得
+        mime = params.get('mime', [''])[0]
+
+        if is_audio or (mime and mime.startswith('audio')):
+            # 音声のみ: コンテナ拡張子 + ビットレート
+            if 'webm' in mime:
+                ext = 'webm'
+            elif 'mp4' in mime or 'aac' in mime:
+                ext = 'm4a'
+            else:
+                ext = container or 'audio'
+            return f'{ext} {bitrate_str}' if bitrate_str else ext
+        else:
+            # 映像+音声: 解像度 + コンテナ + ビットレート
+            if not height and quality:
+                m = re.match(r'(\d+)', quality)
+                if m:
+                    height = int(m.group(1))
+            res = f'{height}p' if height else (quality or 'Auto')
+            cont = container or 'mp4'
+            if bitrate_str:
+                return f'{res} {cont} {bitrate_str}'
+            return f'{res} {cont}'
+    except Exception:
+        return quality or 'Auto'
+
+
 def fetch_xerox_stream(api_url, video_id):
     """Fetch stream data from a single xerox API and return structured streams list"""
     try:
@@ -504,26 +549,58 @@ def fetch_xerox_stream(api_url, video_id):
         if response.status_code == 200:
             data = response.json()
             streams = []
-            if data.get('streamingUrl'):
+            seen_urls = set()
+
+            # formats[] から映像(+音声)ストリームを組み立てる
+            for fmt in data.get('formats', []):
+                url = fmt.get('url') or fmt.get('streamingUrl')
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                quality = fmt.get('quality', '')
+                height = fmt.get('height', 0)
+                container = fmt.get('container', 'mp4')
+                label = _xerox_build_label(url, quality, height, container, is_audio=False)
                 streams.append({
-                    'url': data['streamingUrl'],
-                    'quality': 'Auto',
+                    'url': url,
+                    'quality': label,
+                    'format': 'mp4',
+                    'container': container,
+                    'hasAudio': True,
+                    'hasVideo': True,
+                    'isHLS': False
+                })
+
+            # formats[] が空なら streamingUrl を使う
+            streaming_url = data.get('streamingUrl') or data.get('url')
+            if not streams and streaming_url and streaming_url not in seen_urls:
+                seen_urls.add(streaming_url)
+                label = _xerox_build_label(streaming_url, '', 0, 'mp4', is_audio=False)
+                streams.append({
+                    'url': streaming_url,
+                    'quality': label,
                     'format': 'mp4',
                     'container': 'mp4',
                     'hasAudio': True,
                     'hasVideo': True,
                     'isHLS': False
                 })
-            elif data.get('url'):
+
+            # audioUrl → 音声のみカテゴリ
+            audio_url = data.get('audioUrl')
+            if audio_url and audio_url not in seen_urls:
+                seen_urls.add(audio_url)
+                label = _xerox_build_label(audio_url, '', 0, 'm4a', is_audio=True)
                 streams.append({
-                    'url': data['url'],
-                    'quality': 'Auto',
-                    'format': 'mp4',
-                    'container': 'mp4',
+                    'url': audio_url,
+                    'quality': label,
+                    'format': 'audio',
+                    'container': 'm4a',
                     'hasAudio': True,
-                    'hasVideo': True,
+                    'hasVideo': False,
                     'isHLS': False
                 })
+
             return streams if streams else None
     except Exception:
         pass
