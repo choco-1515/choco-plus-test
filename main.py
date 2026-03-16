@@ -498,12 +498,48 @@ def fetch_xerox_api_list():
     return _xerox_api_list_cache or []
 
 
+# YouTube itag → (height, is_audio_only, label_hint)
+_ITAG_INFO = {
+    17: (144, False, 'mp4'), 18: (360, False, 'mp4'), 22: (720, False, 'mp4'),
+    37: (1080, False, 'mp4'), 38: (3072, False, 'mp4'),
+    82: (360, False, 'mp4'), 83: (480, False, 'mp4'), 84: (720, False, 'mp4'), 85: (1080, False, 'mp4'),
+    133: (240, False, 'mp4v'), 134: (360, False, 'mp4v'), 135: (480, False, 'mp4v'),
+    136: (720, False, 'mp4v'), 137: (1080, False, 'mp4v'), 138: (2160, False, 'mp4v'),
+    160: (144, False, 'mp4v'), 264: (1440, False, 'mp4v'), 266: (2160, False, 'mp4v'),
+    167: (360, False, 'webmv'), 168: (480, False, 'webmv'), 169: (1080, False, 'webmv'),
+    218: (480, False, 'webmv'), 219: (144, False, 'webmv'),
+    242: (240, False, 'webmv'), 243: (360, False, 'webmv'), 244: (480, False, 'webmv'),
+    245: (480, False, 'webmv'), 246: (480, False, 'webmv'), 247: (720, False, 'webmv'),
+    248: (1080, False, 'webmv'), 271: (1440, False, 'webmv'), 272: (2160, False, 'webmv'),
+    302: (720, False, 'webmv'), 303: (1080, False, 'webmv'), 308: (1440, False, 'webmv'),
+    313: (2160, False, 'webmv'), 315: (2160, False, 'webmv'),
+    139: (0, True, 'm4a'), 140: (0, True, 'm4a'), 141: (0, True, 'm4a'),
+    171: (0, True, 'webma'), 172: (0, True, 'webma'),
+    249: (0, True, 'webma'), 250: (0, True, 'webma'), 251: (0, True, 'webma'),
+}
+
+
 def _xerox_build_label(url, quality='', height=0, container='mp4', is_audio=False):
     """URLパラメータと形式情報からボタン用ラベルを生成する"""
     from urllib.parse import urlparse, parse_qs
     import re
     try:
         params = parse_qs(urlparse(url).query)
+
+        # itag から品質・フォーマットを補完
+        itag_str = params.get('itag', [None])[0]
+        if itag_str:
+            try:
+                itag_int = int(itag_str)
+                info = _ITAG_INFO.get(itag_int)
+                if info:
+                    itag_h, itag_audio, itag_fmt = info
+                    if not height and itag_h:
+                        height = itag_h
+                    if not is_audio and itag_audio:
+                        is_audio = True
+            except ValueError:
+                pass
 
         # ビットレートを clen と dur から計算
         bitrate_str = ''
@@ -634,27 +670,158 @@ def fetch_min2_tube_api_list():
     return _min2_tube_api_list_cache or []
 
 
+def _min2_stream_entry(url, seen_urls, quality='', height=0, container='mp4',
+                        is_audio=False, is_video_only=False, is_hls=False):
+    """min2-tube用: URLから1ストリームエントリを生成して返す（重複チェック付き）"""
+    from urllib.parse import urlparse, parse_qs
+    if not url or url in seen_urls:
+        return None
+    seen_urls.add(url)
+
+    # itag から format/hasAudio/hasVideo/container を自動判定
+    try:
+        params = parse_qs(urlparse(url).query)
+        itag_str = params.get('itag', [None])[0]
+        if itag_str:
+            itag_int = int(itag_str)
+            info = _ITAG_INFO.get(itag_int)
+            if info:
+                itag_h, itag_is_audio, itag_fmt = info
+                if not height and itag_h:
+                    height = itag_h
+                if itag_is_audio:
+                    is_audio = True
+                elif itag_fmt.endswith('v'):
+                    is_video_only = True
+                # コンテナ判定
+                if 'webm' in itag_fmt:
+                    container = 'webm'
+                elif 'mp4' in itag_fmt or itag_fmt == 'm4a':
+                    container = 'mp4' if not itag_is_audio else 'm4a'
+        # mime から is_audio / container を補完
+        mime = params.get('mime', [''])[0]
+        if mime:
+            if mime.startswith('audio'):
+                is_audio = True
+            if 'webm' in mime:
+                container = 'webm'
+            elif 'mp4' in mime:
+                container = 'mp4' if not is_audio else 'm4a'
+    except Exception:
+        pass
+
+    if is_hls:
+        return {
+            'url': url, 'quality': 'Auto (HLS)', 'format': 'hls',
+            'container': 'm3u8', 'hasAudio': True, 'hasVideo': True, 'isHLS': True
+        }
+
+    if is_audio:
+        label = _xerox_build_label(url, quality, height, container or 'm4a', is_audio=True)
+        return {
+            'url': url, 'quality': label or 'M4A', 'format': 'audio',
+            'container': container or 'm4a', 'hasAudio': True, 'hasVideo': False, 'isHLS': False
+        }
+    elif is_video_only:
+        label = _xerox_build_label(url, quality, height, container, is_audio=False)
+        return {
+            'url': url, 'quality': label or 'Auto', 'format': 'video',
+            'container': container, 'hasAudio': False, 'hasVideo': True, 'isHLS': False
+        }
+    else:
+        label = _xerox_build_label(url, quality, height, container, is_audio=False)
+        return {
+            'url': url, 'quality': label or 'Auto', 'format': 'mp4',
+            'container': container, 'hasAudio': True, 'hasVideo': True, 'isHLS': False
+        }
+
+
 def fetch_min2_tube_stream(api_url, video_id):
-    """Fetch stream URL from a single min2-tube API and return structured streams list"""
+    """Fetch streams from a single min2-tube API. Supports various response formats."""
     try:
         response = requests.get(
             f"{api_url}/api/video/{video_id}",
             timeout=10
         )
-        if response.status_code == 200:
-            data = response.json()
-            stream_url = data.get('stream_url') or data.get('url') or data.get('streamingUrl')
-            if stream_url:
-                label = _xerox_build_label(stream_url, '', 0, 'mp4', is_audio=False)
-                return [{
-                    'url': stream_url,
-                    'quality': label or 'Auto',
-                    'format': 'mp4',
-                    'container': 'mp4',
-                    'hasAudio': True,
-                    'hasVideo': True,
-                    'isHLS': False
-                }]
+        if response.status_code != 200:
+            return None
+
+        data = response.json()
+        streams = []
+        seen_urls = set()
+
+        # --- formats[] 配列対応（xerox互換）---
+        for fmt in data.get('formats', []):
+            url = fmt.get('url') or fmt.get('stream_url') or fmt.get('streamingUrl')
+            quality = fmt.get('quality', '') or fmt.get('qualityLabel', '')
+            height = fmt.get('height', 0)
+            container = fmt.get('container', 'mp4')
+            # hasAudio/hasVideo フラグで判定
+            has_audio = fmt.get('hasAudio', True)
+            has_video = fmt.get('hasVideo', True)
+            is_hls = fmt.get('isHLS', False) or (container in ('m3u8', 'hls'))
+            is_audio = (not has_video) or fmt.get('audio_only', False)
+            is_video_only = (not has_audio) and has_video
+            entry = _min2_stream_entry(url, seen_urls, quality, height, container,
+                                       is_audio, is_video_only, is_hls)
+            if entry:
+                streams.append(entry)
+
+        # --- adaptiveFormats[] ---
+        for fmt in data.get('adaptiveFormats', []):
+            url = fmt.get('url') or fmt.get('stream_url')
+            quality = fmt.get('qualityLabel', '') or fmt.get('quality', '')
+            height = fmt.get('height', 0)
+            container = fmt.get('container', 'mp4')
+            mime = fmt.get('type', '') or fmt.get('mimeType', '')
+            is_audio = mime.startswith('audio') if mime else False
+            is_video_only = (mime.startswith('video') and not is_audio) if mime else False
+            entry = _min2_stream_entry(url, seen_urls, quality, height, container,
+                                       is_audio, is_video_only, False)
+            if entry:
+                streams.append(entry)
+
+        # --- formatStreams[] ---
+        for fmt in data.get('formatStreams', []):
+            url = fmt.get('url', '')
+            quality = fmt.get('qualityLabel', '') or fmt.get('quality', '')
+            container = fmt.get('container', 'mp4')
+            entry = _min2_stream_entry(url, seen_urls, quality, 0, container,
+                                       False, False, False)
+            if entry:
+                streams.append(entry)
+
+        # --- stream_url / streamingUrl / url（単一ストリーム）---
+        main_url = data.get('stream_url') or data.get('streamingUrl') or data.get('url')
+        entry = _min2_stream_entry(main_url, seen_urls, '', 0, 'mp4', False, False, False)
+        if entry:
+            streams.append(entry)
+
+        # --- audioUrl ---
+        entry = _min2_stream_entry(
+            data.get('audioUrl') or data.get('audio_url'),
+            seen_urls, '', 0, 'm4a', True, False, False
+        )
+        if entry:
+            streams.append(entry)
+
+        # --- videoUrl（映像のみ）---
+        entry = _min2_stream_entry(
+            data.get('videoUrl') or data.get('video_url'),
+            seen_urls, '', 0, 'mp4', False, True, False
+        )
+        if entry:
+            streams.append(entry)
+
+        # --- hlsUrl ---
+        entry = _min2_stream_entry(
+            data.get('hlsUrl') or data.get('hls_url'),
+            seen_urls, '', 0, 'm3u8', False, False, True
+        )
+        if entry:
+            streams.append(entry)
+
+        return streams if streams else None
     except Exception:
         pass
     return None
