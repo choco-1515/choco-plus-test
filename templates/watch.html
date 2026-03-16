@@ -103,14 +103,6 @@
         flex-wrap: wrap;
     }
 
-    .quality-options-footer {
-        display: none;
-        justify-content: flex-end;
-        margin-top: 6px;
-    }
-    .quality-options-footer.visible {
-        display: flex;
-    }
     #btn-show-all-streams {
         background: #2a2a2a;
         color: #aaa;
@@ -120,6 +112,9 @@
         font-size: 12px;
         cursor: pointer;
         transition: all 0.2s;
+        margin-left: auto;
+        align-self: flex-end;
+        flex-shrink: 0;
     }
     #btn-show-all-streams:hover { background: #383838; color: #fff; }
 
@@ -570,9 +565,6 @@
                 <button class="quality-tab" id="btn-open-stream-url" onclick="openCurrentStreamUrl()" style="display:none;color:#adf;">動画が再生されない場合はこちら</button>
             </div>
             <div class="quality-options" id="qualityOptions"></div>
-            <div class="quality-options-footer" id="qualityOptionsFooter">
-                <button id="btn-show-all-streams" onclick="toggleShowAllStreams()">全項目読み込み</button>
-            </div>
         </div>
 
         <!-- プレイヤー -->
@@ -1040,9 +1032,6 @@
         if (type !== 'invidious') {
             document.getElementById('btn-reload-instance').style.display = 'none';
             document.getElementById('btn-open-stream-url').style.display = 'none';
-            document.getElementById('qualityOptionsFooter').classList.remove('visible');
-            _showAllStreams = false;
-            document.getElementById('btn-show-all-streams').textContent = '全項目読み込み';
             _hideLogArea();
             if (_raceAbortController) { _raceAbortController.abort(); _raceAbortController = null; }
         }
@@ -1154,7 +1143,6 @@
         _showLogBtn();
         document.getElementById('btn-reload-instance').style.display = 'inline-block';
         document.getElementById('btn-open-stream-url').style.display = 'inline-block';
-        document.getElementById('qualityOptionsFooter').classList.add('visible');
     }
 
     // ---- GitHubフォールバック突入時の「絶望的」UI表示 ----
@@ -1186,7 +1174,6 @@
             if (currentInvidiousCombo) {
                 document.getElementById('btn-reload-instance').style.display = 'inline-block';
                 document.getElementById('btn-open-stream-url').style.display = 'inline-block';
-                document.getElementById('qualityOptionsFooter').classList.add('visible');
             }
             return;
         }
@@ -1249,11 +1236,8 @@
 
         invidiousStreams = null;
         currentInvidiousCombo = null;
-        _showAllStreams = false;
-        document.getElementById('btn-show-all-streams').textContent = '全項目読み込み';
         document.getElementById('btn-reload-instance').style.display = 'none';
         document.getElementById('btn-open-stream-url').style.display = 'none';
-        document.getElementById('qualityOptionsFooter').classList.remove('visible');
         document.getElementById('qualityOptions').innerHTML = '';
         const seq = ++fetchSeq;
         showLoading('別のインスタンスを検索中...');
@@ -1386,13 +1370,18 @@
             wrap.appendChild(chk);
             optionsDiv.appendChild(wrap);
         });
+
+        // 全項目読み込みトグルボタンをフレックス行の右端に追加（ストリーム取得済みのときは常に表示）
+        const toggleBtn = document.createElement('button');
+        toggleBtn.id = 'btn-show-all-streams';
+        toggleBtn.textContent = _showAllStreams ? '各項目ごとに読み込み' : '全項目読み込み';
+        toggleBtn.onclick = toggleShowAllStreams;
+        optionsDiv.appendChild(toggleBtn);
     }
 
     // ---- 全項目 / 各項目ごとの表示切り替え ----
     function toggleShowAllStreams() {
         _showAllStreams = !_showAllStreams;
-        const btn = document.getElementById('btn-show-all-streams');
-        btn.textContent = _showAllStreams ? '各項目ごとに読み込み' : '全項目読み込み';
         renderQualityOptions();
     }
 
@@ -1425,10 +1414,8 @@
             currentEmbedUrl = null;
             _invLogs.length = 0;
             _showAllStreams = false;
-            document.getElementById('btn-show-all-streams').textContent = '全項目読み込み';
             document.getElementById('btn-reload-instance').style.display = 'none';
             document.getElementById('btn-open-stream-url').style.display = 'none';
-            document.getElementById('qualityOptionsFooter').classList.remove('visible');
             document.getElementById('qualityOptions').innerHTML = '';
             _hideLogArea();
             loadInvidiousStream();
