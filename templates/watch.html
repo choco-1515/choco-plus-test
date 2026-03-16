@@ -19,6 +19,8 @@
                 <button class="quality-tab" onclick="switchYtdlpQualityFilter('video')" id="ytdlp-tab-video">映像のみ</button>
                 <button class="quality-tab" onclick="switchYtdlpQualityFilter('audio')" id="ytdlp-tab-audio">音声のみ</button>
                 <button class="quality-tab" onclick="switchYtdlpQualityFilter('hls')" id="ytdlp-tab-hls">HLS</button>
+                <button id="btn-ytdlp-log" onclick="toggleYtdlpLog()" style="display:none;">ログ</button>
+                <button class="quality-tab" id="btn-ytdlp-reload-api" onclick="reloadYtdlpWithDifferentApi()" style="display:none;margin-left:auto;color:#f90;">他のAPIで読み込む</button>
             </div>
             <div class="quality-options" id="ytdlpQualityOptions"></div>
         </div>
@@ -40,6 +42,7 @@
         <!-- プレイヤー -->
         <div class="player-wrapper">
             <div id="inv-log-overlay"></div>
+            <div id="ytdlp-log-overlay"></div>
             <div class="player-container" id="playerContainer">
                 <div class="loading-spinner">
                     <div class="spinner"></div>
@@ -139,6 +142,8 @@
     let ytdlpStreams = null;
     let ytdlpCurrentFilter = 'mp4';
     let ytdlpSelectedQuality = { mp4: null, video: null, audio: null, hls: null };
+    let _ytdlpLogs = [];
+    let _ytdlpUsedSource = null;
 
     let _lastKnownTime = 0;  // プレイヤーが破棄される前に退避した再生位置
 
@@ -187,6 +192,43 @@
     function _hideLogArea() {
         const btn = document.getElementById('btn-inv-log');
         const el  = document.getElementById('inv-log-overlay');
+        btn.style.display = 'none';
+        btn.classList.remove('log-open');
+        el.classList.remove('visible');
+    }
+
+    // ---- ytdlp 専用ログ関数 ----
+    function _ytdlpLog(msg, level = 'log') {
+        const now = new Date();
+        const time = now.toTimeString().slice(0, 8);
+        _ytdlpLogs.push({ time, msg, level });
+        _ytdlpRefreshLogOverlay();
+    }
+    function _ytdlpRefreshLogOverlay() {
+        const el = document.getElementById('ytdlp-log-overlay');
+        if (!el || !el.classList.contains('visible')) return;
+        el.innerHTML = _ytdlpLogs.slice(-200).map(l =>
+            `<div class="log-line log-${l.level}"><span style="color:#555;">[${l.time}]</span> ${escHtml(l.msg)}</div>`
+        ).join('');
+        el.scrollTop = el.scrollHeight;
+    }
+    function toggleYtdlpLog() {
+        const el  = document.getElementById('ytdlp-log-overlay');
+        const btn = document.getElementById('btn-ytdlp-log');
+        const visible = el.classList.toggle('visible');
+        btn.classList.toggle('log-open', visible);
+        if (visible) _ytdlpRefreshLogOverlay();
+    }
+    function _showYtdlpLogBtn() { document.getElementById('btn-ytdlp-log').style.display = 'inline-block'; }
+    function _closeYtdlpLogOverlay() {
+        const btn = document.getElementById('btn-ytdlp-log');
+        const el  = document.getElementById('ytdlp-log-overlay');
+        btn.classList.remove('log-open');
+        el.classList.remove('visible');
+    }
+    function _hideYtdlpLogArea() {
+        const btn = document.getElementById('btn-ytdlp-log');
+        const el  = document.getElementById('ytdlp-log-overlay');
         btn.style.display = 'none';
         btn.classList.remove('log-open');
         el.classList.remove('visible');
@@ -514,6 +556,10 @@
             _hideLogArea();
             if (_raceAbortController) { _raceAbortController.abort(); _raceAbortController = null; }
         }
+        if (type !== 'ytdlp') {
+            _hideYtdlpLogArea();
+            document.getElementById('btn-ytdlp-reload-api').style.display = 'none';
+        }
 
         if (type === 'ytdlp') {
             loadYtdlpStream();
@@ -575,32 +621,66 @@
     }
 
     // ---- ytdlp ストリーム ----
-    function loadYtdlpStream() {
-        if (ytdlpStreams) {
+    function loadYtdlpStream(excludeSource) {
+        if (ytdlpStreams && !excludeSource) {
             renderYtdlpQualityOptions();
             playFirstYtdlpAvailable();
             return;
         }
+        _ytdlpLogs.length = 0;
         const seq = ++fetchSeq;
         showLoading();
-        fetch('/api/stream/' + videoId)
+        _showYtdlpLogBtn();
+
+        let url = '/api/stream/' + videoId;
+        if (excludeSource) url += '?exclude=' + encodeURIComponent(excludeSource);
+
+        const sourceLabel = excludeSource
+            ? (excludeSource === 'xerox' ? 'min2-tube API' : 'xerox API')
+            : 'xerox API / min2-tube API';
+        _ytdlpLog(`ストリーム取得を開始します... [対象: ${sourceLabel}]`);
+        _ytdlpLog(`APIリクエスト送信中: ${url}`);
+
+        const startTime = Date.now();
+        fetch(url)
             .then(r => r.json())
             .then(data => {
                 if (seq !== fetchSeq || currentStreamType !== 'ytdlp') return;
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 if (data.streams && data.streams.length > 0) {
+                    const src = data.source || '不明';
+                    _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${src}, ${elapsed}秒)`);
                     ytdlpStreams = data.streams;
+                    _ytdlpUsedSource = data.source || null;
                     ytdlpCurrentFilter = 'mp4';
                     updateYtdlpQualityTabs('mp4');
                     renderYtdlpQualityOptions();
                     playFirstYtdlpAvailable();
+                    _closeYtdlpLogOverlay();
+                    document.getElementById('btn-ytdlp-reload-api').style.display = 'inline-block';
                 } else {
+                    _ytdlpLog(`❌ ストリームの取得に失敗しました (${elapsed}秒)`, 'err');
                     showError('ストリームの取得に失敗しました。再読み込みしてください');
                 }
             })
-            .catch(() => {
+            .catch(err => {
                 if (seq !== fetchSeq || currentStreamType !== 'ytdlp') return;
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                _ytdlpLog(`❌ リクエストエラー: ${err && err.message ? err.message : String(err)} (${elapsed}秒)`, 'err');
                 showError('ストリームの取得に失敗しました。再読み込みしてください');
             });
+    }
+
+    // ---- 他のAPIで読み込む ----
+    function reloadYtdlpWithDifferentApi() {
+        const excludeSource = _ytdlpUsedSource;
+        ytdlpStreams = null;
+        ytdlpCachedUrl = null;
+        _ytdlpUsedSource = null;
+        currentEmbedUrl = null;
+        document.getElementById('btn-ytdlp-reload-api').style.display = 'none';
+        document.getElementById('ytdlpQualityOptions').innerHTML = '';
+        loadYtdlpStream(excludeSource);
     }
 
     // ---- ytdlp 画質フィルタ切り替え ----
@@ -1015,8 +1095,12 @@
         } else if (currentStreamType === 'ytdlp') {
             ytdlpStreams = null;
             ytdlpCachedUrl = null;
+            _ytdlpUsedSource = null;
+            _ytdlpLogs.length = 0;
             currentEmbedUrl = null;
             document.getElementById('ytdlpQualityOptions').innerHTML = '';
+            document.getElementById('btn-ytdlp-reload-api').style.display = 'none';
+            _hideYtdlpLogArea();
             loadYtdlpStream();
         } else if (currentStreamType === 'nocookie') {
             loadNocookieStream();
