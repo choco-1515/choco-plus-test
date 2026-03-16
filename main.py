@@ -466,6 +466,10 @@ XEROX_API_LIST_URL = "https://raw.githubusercontent.com/choco-1515/About-youtube
 _xerox_api_list_cache = None
 _xerox_api_list_cache_time = 0
 
+MIN2_TUBE_API_LIST_URL = "https://raw.githubusercontent.com/choco-1515/About-youtube/refs/heads/main/stream/min-tube-api.json"
+_min2_tube_api_list_cache = None
+_min2_tube_api_list_cache_time = 0
+
 
 def fetch_xerox_api_list():
     """Fetch list of xerox API base URLs from GitHub JSON (cached 5 minutes)"""
@@ -598,6 +602,59 @@ def fetch_xerox_stream(api_url, video_id):
                 })
 
             return streams if streams else None
+    except Exception:
+        pass
+    return None
+
+
+def fetch_min2_tube_api_list():
+    """Fetch list of min2-tube API base URLs from GitHub JSON (cached 5 minutes)"""
+    import time
+    global _min2_tube_api_list_cache, _min2_tube_api_list_cache_time
+    now = time.time()
+    if _min2_tube_api_list_cache and (now - _min2_tube_api_list_cache_time) < 300:
+        return _min2_tube_api_list_cache
+    try:
+        response = requests.get(MIN2_TUBE_API_LIST_URL, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                urls = [item if isinstance(item, str) else item.get('url', '') for item in data]
+            elif isinstance(data, dict):
+                urls = data.get('apis', data.get('urls', []))
+            else:
+                urls = []
+            urls = [u for u in urls if u]
+            if urls:
+                _min2_tube_api_list_cache = urls
+                _min2_tube_api_list_cache_time = now
+                return urls
+    except Exception:
+        pass
+    return _min2_tube_api_list_cache or []
+
+
+def fetch_min2_tube_stream(api_url, video_id):
+    """Fetch stream URL from a single min2-tube API and return structured streams list"""
+    try:
+        response = requests.get(
+            f"{api_url}/api/video/{video_id}",
+            timeout=10
+        )
+        if response.status_code == 200:
+            data = response.json()
+            stream_url = data.get('stream_url') or data.get('url') or data.get('streamingUrl')
+            if stream_url:
+                label = _xerox_build_label(stream_url, '', 0, 'mp4', is_audio=False)
+                return [{
+                    'url': stream_url,
+                    'quality': label or 'Auto',
+                    'format': 'mp4',
+                    'container': 'mp4',
+                    'hasAudio': True,
+                    'hasVideo': True,
+                    'isHLS': False
+                }]
     except Exception:
         pass
     return None
@@ -804,31 +861,63 @@ def invidious_stream(video_id):
 
 @app.route('/api/stream/<video_id>')
 def get_stream(video_id):
-    """Fetch streams from xerox APIs in parallel, return first success"""
-    api_list = fetch_xerox_api_list()
-    if not api_list:
-        return jsonify({'error': 'APIリストを取得できませんでした'}), 503
+    """Fetch streams from xerox APIs in parallel; fall back to min2-tube API if all xerox fail.
+    Query param: exclude=xerox,min2tube  (comma-separated API group names to skip)
+    Response includes: source='xerox'|'min2tube'
+    """
+    exclude_raw = request.args.get('exclude', '')
+    exclude_set = set(e.strip().lower() for e in exclude_raw.split(',') if e.strip())
 
     result_streams = None
+    used_source = None
 
-    with ThreadPoolExecutor(max_workers=len(api_list)) as executor:
-        futures = {
-            executor.submit(fetch_xerox_stream, api, video_id): api
-            for api in api_list
-        }
-        for future in as_completed(futures):
-            try:
-                streams = future.result()
-                if streams:
-                    result_streams = streams
-                    for f in futures:
-                        f.cancel()
-                    break
-            except Exception:
-                continue
+    # --- xerox API グループ ---
+    if 'xerox' not in exclude_set:
+        api_list = fetch_xerox_api_list()
+        if api_list:
+            with ThreadPoolExecutor(max_workers=len(api_list)) as executor:
+                futures = {
+                    executor.submit(fetch_xerox_stream, api, video_id): api
+                    for api in api_list
+                }
+                for future in as_completed(futures):
+                    try:
+                        streams = future.result()
+                        if streams:
+                            result_streams = streams
+                            used_source = 'xerox'
+                            for f in futures:
+                                f.cancel()
+                            break
+                    except Exception:
+                        continue
 
     if result_streams:
-        return jsonify({'streams': result_streams})
+        return jsonify({'streams': result_streams, 'source': used_source})
+
+    # --- min2-tube API グループ（フォールバック）---
+    if 'min2tube' not in exclude_set:
+        min2_api_list = fetch_min2_tube_api_list()
+        if min2_api_list:
+            with ThreadPoolExecutor(max_workers=len(min2_api_list)) as executor:
+                futures = {
+                    executor.submit(fetch_min2_tube_stream, api, video_id): api
+                    for api in min2_api_list
+                }
+                for future in as_completed(futures):
+                    try:
+                        streams = future.result()
+                        if streams:
+                            result_streams = streams
+                            used_source = 'min2tube'
+                            for f in futures:
+                                f.cancel()
+                            break
+                    except Exception:
+                        continue
+
+    if result_streams:
+        return jsonify({'streams': result_streams, 'source': used_source})
     else:
         return jsonify({'error': 'ストリームを取得できませんでした'}), 503
 
