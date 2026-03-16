@@ -415,6 +415,39 @@ main {
 #inv-log-overlay .log-warn { color: #f90; }
 #inv-log-overlay .log-err  { color: #f55; }
 
+#btn-ytdlp-log {
+    margin-left: 6px;
+    background: #2a2a2a;
+    color: #aaa;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+#btn-ytdlp-log:hover { background: #383838; color: #fff; }
+#btn-ytdlp-log.log-open { background: #333; color: #fff; border-color: #aaa; }
+
+#ytdlp-log-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 50;
+    border-radius: 12px;
+    padding: 14px 16px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #ccc;
+}
+#ytdlp-log-overlay.visible { display: block; }
+#ytdlp-log-overlay .log-line { border-bottom: 1px solid #222; padding: 2px 0; word-break: break-all; }
+#ytdlp-log-overlay .log-warn { color: #f90; }
+#ytdlp-log-overlay .log-err  { color: #f55; }
+
 .player-container {
     position: relative;
     width: 100%;
