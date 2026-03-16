@@ -519,14 +519,15 @@ _ITAG_INFO = {
 }
 
 
-def _xerox_build_label(url, quality='', height=0, container='mp4', is_audio=False):
+def _xerox_build_label(url, quality='', height=0, container='mp4', is_audio=False, is_video_only=False):
     """URLパラメータと形式情報からボタン用ラベルを生成する"""
     from urllib.parse import urlparse, parse_qs
     import re
     try:
         params = parse_qs(urlparse(url).query)
 
-        # itag から品質・フォーマットを補完
+        # itag から品質・フォーマット・コーデックを補完
+        itag_fmt = ''
         itag_str = params.get('itag', [None])[0]
         if itag_str:
             try:
@@ -565,12 +566,20 @@ def _xerox_build_label(url, quality='', height=0, container='mp4', is_audio=Fals
                 fmt = (container or 'audio').upper()
             return f'{bitrate_str} ({fmt})' if bitrate_str else fmt
         else:
-            # 映像: 解像度のみ ○p
+            # 映像: 解像度 ○p、映像のみの場合は ○p (コーデック)
             if not height and quality:
                 m = re.match(r'(\d+)', quality)
                 if m:
                     height = int(m.group(1))
-            return f'{height}p' if height else (quality or 'Auto')
+            base = f'{height}p' if height else (quality or 'Auto')
+            if is_video_only:
+                # コーデック判定: itag_fmt → mime → container の順に確認
+                if 'webm' in itag_fmt or 'webm' in mime or (container or '').lower() == 'webm':
+                    codec = 'WebM'
+                else:
+                    codec = 'H.264'
+                return f'{base} ({codec})'
+            return base
     except Exception:
         return quality or 'Auto'
 
@@ -723,7 +732,7 @@ def _min2_stream_entry(url, seen_urls, quality='', height=0, container='mp4',
             'container': container or 'm4a', 'hasAudio': True, 'hasVideo': False, 'isHLS': False
         }
     elif is_video_only:
-        label = _xerox_build_label(url, quality, height, container, is_audio=False)
+        label = _xerox_build_label(url, quality, height, container, is_audio=False, is_video_only=True)
         return {
             'url': url, 'quality': label or 'Auto', 'format': 'video',
             'container': container, 'hasAudio': False, 'hasVideo': True, 'isHLS': False
