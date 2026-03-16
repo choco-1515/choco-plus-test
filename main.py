@@ -516,25 +516,21 @@ def _xerox_build_label(url, quality='', height=0, container='mp4', is_audio=Fals
         mime = params.get('mime', [''])[0]
 
         if is_audio or (mime and mime.startswith('audio')):
-            # 音声のみ: コンテナ拡張子 + ビットレート
+            # 音声のみ: ○kbps (フォーマット大文字)
             if 'webm' in mime:
-                ext = 'webm'
+                fmt = 'WebM'
             elif 'mp4' in mime or 'aac' in mime:
-                ext = 'm4a'
+                fmt = 'M4A'
             else:
-                ext = container or 'audio'
-            return f'{ext} {bitrate_str}' if bitrate_str else ext
+                fmt = (container or 'audio').upper()
+            return f'{bitrate_str} ({fmt})' if bitrate_str else fmt
         else:
-            # 映像+音声: 解像度 + コンテナ + ビットレート
+            # 映像: 解像度のみ ○p
             if not height and quality:
                 m = re.match(r'(\d+)', quality)
                 if m:
                     height = int(m.group(1))
-            res = f'{height}p' if height else (quality or 'Auto')
-            cont = container or 'mp4'
-            if bitrate_str:
-                return f'{res} {cont} {bitrate_str}'
-            return f'{res} {cont}'
+            return f'{height}p' if height else (quality or 'Auto')
     except Exception:
         return quality or 'Auto'
 
