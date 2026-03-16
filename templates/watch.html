@@ -1337,13 +1337,20 @@
         });
 
         // 同じラベルの重複を除去（全項目モードの場合はスキップ）
+        // 再生中のストリームは同ラベルの他のものより優先して残す
         if (!_showAllStreams) {
-            const seen = new Set();
-            filtered = filtered.filter(s => {
-                if (seen.has(s.quality)) return false;
-                seen.add(s.quality);
-                return true;
+            const seenIndex = new Map(); // quality → result配列内のインデックス
+            const result = [];
+            filtered.forEach(s => {
+                if (!seenIndex.has(s.quality)) {
+                    seenIndex.set(s.quality, result.length);
+                    result.push(s);
+                } else if (s === _currentPlayingStream) {
+                    // 既に追加済みの同ラベル項目を再生中ストリームで上書き（位置は変えない）
+                    result[seenIndex.get(s.quality)] = s;
+                }
             });
+            filtered = result;
         }
 
         const _savedQ = _selectedQualityPerFilter[currentQualityFilter];
