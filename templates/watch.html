@@ -625,6 +625,11 @@
         if (ytdlpStreams && !excludeSource) {
             renderYtdlpQualityOptions();
             playFirstYtdlpAvailable();
+            // ボタン表示状態を復元（他の再生方法から戻った際に隠れていた場合）
+            if (_ytdlpLogs.length > 0) _showYtdlpLogBtn();
+            if (_ytdlpUsedSource !== null) {
+                document.getElementById('btn-ytdlp-reload-api').style.display = 'inline-block';
+            }
             return;
         }
         _ytdlpLogs.length = 0;
