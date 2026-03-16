@@ -681,6 +681,8 @@
     let ytdlpCurrentFilter = 'mp4';
     let ytdlpSelectedQuality = { mp4: null, video: null, audio: null, hls: null };
 
+    let _lastKnownTime = 0;  // プレイヤーが破棄される前に退避した再生位置
+
     // ---- コンソールログキャプチャ (Invidious取得中のログ表示用) ----
     const _invLogs = [];
     const _origLog  = console.log.bind(console);
@@ -1602,10 +1604,10 @@
             btn.classList.toggle('selected', btn.dataset.streamUrl === stream.url);
         });
 
-        // 現在の再生位置を保存
+        // 現在の再生位置を保存（メディア要素がない場合は退避済みの値を使う）
         const existingMedia = playerContainer.querySelector('video, audio');
         const savedTime = (existingMedia && isFinite(existingMedia.currentTime) && existingMedia.currentTime > 0)
-            ? existingMedia.currentTime : 0;
+            ? existingMedia.currentTime : _lastKnownTime;
 
         let mediaEl;
         if (stream.isHLS) {
@@ -1642,12 +1644,21 @@
     }
 
     // ---- UI ヘルパー ----
+    function _saveTimeBeforeClear() {
+        const m = playerContainer.querySelector('video, audio');
+        if (m && isFinite(m.currentTime) && m.currentTime > 0) {
+            _lastKnownTime = m.currentTime;
+        }
+    }
+
     function showLoading(msg) {
+        _saveTimeBeforeClear();
         const text = msg || 'ストリームを読み込み中...';
         playerContainer.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><p style="color:#aaa;font-size:14px;">${text}</p></div>`;
     }
 
     function showError(message) {
+        _saveTimeBeforeClear();
         playerContainer.innerHTML = `
             <div class="player-error">
                 <div class="error-message-box">
