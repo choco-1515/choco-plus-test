@@ -1,3 +1,5 @@
+https://replit.com/@a0966a11/j-2#static/style.css　@a0966a@hotmail.com 3/18最新コード
+
 #### コンソールでドの組み合わせが成功したか見れるらしい(inv)
 ***
 #### invidiousストリーム再生時
