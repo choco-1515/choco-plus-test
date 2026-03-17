@@ -1175,6 +1175,7 @@ def get_stream(video_id):
 
     result_streams = None
     used_source = None
+    failed_sources = []  # 失敗したAPIのリスト（クライアントのログ表示用）
 
     # --- xerox API グループ ---
     if 'xerox' not in exclude_set:
@@ -1209,7 +1210,10 @@ def get_stream(video_id):
 
     if result_streams:
         logger.info(f"[stream/{video_id}] SUCCESS via xerox ({len(result_streams)} streams)")
-        return jsonify({'streams': result_streams, 'source': used_source})
+        return jsonify({'streams': result_streams, 'source': used_source, 'failed_sources': failed_sources})
+
+    if 'xerox' not in exclude_set:
+        failed_sources.append('xerox')
 
     # --- yuzu API（第2フォールバック）---
     if 'yuzu' not in exclude_set:
@@ -1220,11 +1224,13 @@ def get_stream(video_id):
                 result_streams = yuzu_streams
                 used_source = 'yuzu'
                 logger.info(f"[stream/{video_id}] SUCCESS via yuzu ({len(result_streams)} streams)")
-                return jsonify({'streams': result_streams, 'source': used_source})
+                return jsonify({'streams': result_streams, 'source': used_source, 'failed_sources': failed_sources})
             else:
                 logger.warning(f"[stream/{video_id}] yuzu returned no streams")
+                failed_sources.append('yuzu')
         except Exception as e:
             logger.warning(f"[stream/{video_id}] yuzu exception: {e}")
+            failed_sources.append('yuzu')
     else:
         logger.info(f"[stream/{video_id}] yuzu excluded")
 
@@ -1261,10 +1267,10 @@ def get_stream(video_id):
 
     if result_streams:
         logger.info(f"[stream/{video_id}] SUCCESS via min2tube ({len(result_streams)} streams)")
-        return jsonify({'streams': result_streams, 'source': used_source})
+        return jsonify({'streams': result_streams, 'source': used_source, 'failed_sources': failed_sources})
     else:
-        logger.warning(f"[stream/{video_id}] FAILED — both xerox and min2tube returned nothing")
-        return jsonify({'error': 'ストリームを取得できませんでした'}), 503
+        logger.warning(f"[stream/{video_id}] FAILED — all APIs returned nothing")
+        return jsonify({'error': 'ストリームを取得できませんでした', 'failed_sources': failed_sources}), 503
 
 
 
