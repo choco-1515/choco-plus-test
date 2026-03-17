@@ -705,6 +705,7 @@ def fetch_yuzu_stream(video_id):
             height = 0
             is_audio = False
             is_video_only = False
+            is_combined = False   # itag により映像+音声と明示されたか
             container = ext
 
             if resolution == 'audio only':
@@ -722,6 +723,9 @@ def fetch_yuzu_stream(video_id):
                             is_audio = True
                         elif itag_fmt.endswith('v'):
                             is_video_only = True
+                        else:
+                            # 'mp4' など末尾が 'v' でも音声でもない → 映像+音声の一体型 (itag 18, 22 など)
+                            is_combined = True
                         if 'webm' in itag_fmt:
                             container = 'webm'
                         elif 'mp4' in itag_fmt or itag_fmt == 'm4a':
@@ -737,6 +741,13 @@ def fetch_yuzu_stream(video_id):
                         height = int(parts[1])
                 except Exception:
                     pass
+
+            # itag が不明（_ITAG_INFO に未登録）で is_combined が False のとき:
+            # resolution が "WxH" 形式なら DASH 映像のみストリームとして扱う
+            if not is_audio and not is_video_only and not is_combined:
+                if 'x' in resolution:
+                    is_video_only = True
+                # それ以外（resolution が空や特殊値）は combined として扱う
 
             if is_audio:
                 label = _xerox_build_label(stream_url, '', height, container or 'm4a', is_audio=True)
