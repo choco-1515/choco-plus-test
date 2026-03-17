@@ -622,7 +622,8 @@ main {
     gap: 12px;
     text-decoration: none;
     color: inherit;
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 0;
     border-radius: 8px;
     padding: 2px 6px 2px 2px;
     margin: -2px -6px -2px -2px;
