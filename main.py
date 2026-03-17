@@ -463,10 +463,24 @@ def proxy_thumbnail(video_id):
 
 
 XEROX_API_LIST_URL = "https://raw.githubusercontent.com/choco-1515/About-youtube/refs/heads/main/stream/xerox-api.json"
+_XEROX_API_FALLBACK = [
+    "https://vpdzyc-3000.csb.app",
+    "https://rt5k4d-3000.csb.app",
+    "https://xeroxyt-nt-apiv1-0ydt.onrender.com",
+    "https://xeroxyt-nt-apiv1-m28t.onrender.com",
+    "https://xeroxyt-nt-apiv1-5vsz.onrender.com",
+]
 _xerox_api_list_cache = None
 _xerox_api_list_cache_time = 0
 
 MIN2_TUBE_API_LIST_URL = "https://raw.githubusercontent.com/choco-1515/About-youtube/refs/heads/main/stream/min-tube-api.json"
+_MIN2_TUBE_API_FALLBACK = [
+    "https://min-tube2-api.vercel.app",
+    "https://min-tube-api-3.vercel.app",
+    "https://min-tube-api4.vercel.app",
+    "https://min-tube-api5.vercel.app",
+    "https://server-minp.vercel.app",
+]
 _min2_tube_api_list_cache = None
 _min2_tube_api_list_cache_time = 0
 
@@ -493,9 +507,11 @@ def fetch_xerox_api_list():
                 _xerox_api_list_cache = urls
                 _xerox_api_list_cache_time = now
                 return urls
-    except Exception:
-        pass
-    return _xerox_api_list_cache or []
+    except Exception as e:
+        logger.warning(f"[xerox] API list fetch failed: {e}")
+    result = _xerox_api_list_cache or _XEROX_API_FALLBACK
+    logger.info(f"[xerox] Using {'cache' if _xerox_api_list_cache else 'hardcoded fallback'} ({len(result)} APIs)")
+    return result
 
 
 # YouTube itag → (height, is_audio_only, label_hint)
@@ -591,6 +607,7 @@ def fetch_xerox_stream(api_url, video_id):
             f"{api_url}/stream?id={video_id}",
             timeout=10
         )
+        logger.info(f"[xerox] {api_url} → status={response.status_code}")
         if response.status_code == 200:
             data = response.json()
             streams = []
@@ -646,9 +663,10 @@ def fetch_xerox_stream(api_url, video_id):
                     'isHLS': False
                 })
 
+            logger.info(f"[xerox] {api_url} → streams={len(streams)}, keys={list(data.keys())[:8]}")
             return streams if streams else None
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[xerox] {api_url} → exception: {e}")
     return None
 
 
@@ -674,9 +692,11 @@ def fetch_min2_tube_api_list():
                 _min2_tube_api_list_cache = urls
                 _min2_tube_api_list_cache_time = now
                 return urls
-    except Exception:
-        pass
-    return _min2_tube_api_list_cache or []
+    except Exception as e:
+        logger.warning(f"[min2tube] API list fetch failed: {e}")
+    result = _min2_tube_api_list_cache or _MIN2_TUBE_API_FALLBACK
+    logger.info(f"[min2tube] Using {'cache' if _min2_tube_api_list_cache else 'hardcoded fallback'} ({len(result)} APIs)")
+    return result
 
 
 def _min2_stream_entry(url, seen_urls, quality='', height=0, container='mp4',
@@ -752,6 +772,7 @@ def fetch_min2_tube_stream(api_url, video_id):
             f"{api_url}/api/video/{video_id}",
             timeout=10
         )
+        logger.info(f"[min2tube] {api_url} → status={response.status_code}")
         if response.status_code != 200:
             return None
 
@@ -830,9 +851,10 @@ def fetch_min2_tube_stream(api_url, video_id):
         if entry:
             streams.append(entry)
 
+        logger.info(f"[min2tube] {api_url} → streams={len(streams)}, keys={list(data.keys())[:8]}")
         return streams if streams else None
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[min2tube] {api_url} → exception: {e}")
     return None
 
 
@@ -1050,51 +1072,74 @@ def get_stream(video_id):
     # --- xerox API グループ ---
     if 'xerox' not in exclude_set:
         api_list = fetch_xerox_api_list()
+        logger.info(f"[stream/{video_id}] xerox API list: {len(api_list)} APIs")
         if api_list:
+            xerox_results = {}
             with ThreadPoolExecutor(max_workers=len(api_list)) as executor:
                 futures = {
                     executor.submit(fetch_xerox_stream, api, video_id): api
                     for api in api_list
                 }
                 for future in as_completed(futures):
+                    api_url = futures[future]
                     try:
                         streams = future.result()
+                        xerox_results[api_url] = len(streams) if streams else 0
                         if streams:
                             result_streams = streams
                             used_source = 'xerox'
                             for f in futures:
                                 f.cancel()
                             break
-                    except Exception:
+                    except Exception as e:
+                        xerox_results[api_url] = f'ERR:{e}'
                         continue
+            logger.info(f"[stream/{video_id}] xerox results: {xerox_results}")
+        else:
+            logger.warning(f"[stream/{video_id}] xerox API list empty — skipping xerox")
+    else:
+        logger.info(f"[stream/{video_id}] xerox excluded")
 
     if result_streams:
+        logger.info(f"[stream/{video_id}] SUCCESS via xerox ({len(result_streams)} streams)")
         return jsonify({'streams': result_streams, 'source': used_source})
 
     # --- min2-tube API グループ（フォールバック）---
     if 'min2tube' not in exclude_set:
         min2_api_list = fetch_min2_tube_api_list()
+        logger.info(f"[stream/{video_id}] min2-tube API list: {len(min2_api_list)} APIs — starting fallback")
         if min2_api_list:
+            min2_results = {}
             with ThreadPoolExecutor(max_workers=len(min2_api_list)) as executor:
                 futures = {
                     executor.submit(fetch_min2_tube_stream, api, video_id): api
                     for api in min2_api_list
                 }
                 for future in as_completed(futures):
+                    api_url = futures[future]
                     try:
                         streams = future.result()
+                        min2_results[api_url] = len(streams) if streams else 0
                         if streams:
                             result_streams = streams
                             used_source = 'min2tube'
                             for f in futures:
                                 f.cancel()
                             break
-                    except Exception:
+                    except Exception as e:
+                        min2_results[api_url] = f'ERR:{e}'
                         continue
+            logger.info(f"[stream/{video_id}] min2-tube results: {min2_results}")
+        else:
+            logger.warning(f"[stream/{video_id}] min2-tube API list empty")
+    else:
+        logger.info(f"[stream/{video_id}] min2tube excluded")
 
     if result_streams:
+        logger.info(f"[stream/{video_id}] SUCCESS via min2tube ({len(result_streams)} streams)")
         return jsonify({'streams': result_streams, 'source': used_source})
     else:
+        logger.warning(f"[stream/{video_id}] FAILED — both xerox and min2tube returned nothing")
         return jsonify({'error': 'ストリームを取得できませんでした'}), 503
 
 
