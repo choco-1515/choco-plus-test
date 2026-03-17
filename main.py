@@ -670,6 +670,102 @@ def fetch_xerox_stream(api_url, video_id):
     return None
 
 
+YUZU_API_BASE = "https://yudlp.vercel.app"
+
+def fetch_yuzu_stream(video_id):
+    """Fetch stream data from Yuzu API (https://yudlp.vercel.app/stream/{video_id}).
+    Returns a list of stream dicts compatible with the rest of the pipeline, or None on failure.
+    """
+    url = f"{YUZU_API_BASE}/stream/{video_id}"
+    try:
+        response = requests.get(url, timeout=15)
+        logger.info(f"[yuzu] {url} → status={response.status_code}")
+        if response.status_code != 200:
+            logger.warning(f"[yuzu] non-200 status: {response.status_code}")
+            return None
+        data = response.json()
+        formats = data.get('formats', [])
+        if not formats:
+            logger.warning(f"[yuzu] no formats in response")
+            return None
+
+        seen_urls = set()
+        streams = []
+        for fmt in formats:
+            stream_url = fmt.get('url', '')
+            if not stream_url or stream_url in seen_urls:
+                continue
+            seen_urls.add(stream_url)
+
+            itag_str = str(fmt.get('itag', ''))
+            ext = fmt.get('ext', 'mp4')
+            resolution = fmt.get('resolution', '')
+
+            # itag 解析で種別・品質を決定
+            height = 0
+            is_audio = False
+            is_video_only = False
+            container = ext
+
+            if resolution == 'audio only':
+                is_audio = True
+
+            if itag_str:
+                try:
+                    itag_int = int(itag_str)
+                    info = _ITAG_INFO.get(itag_int)
+                    if info:
+                        itag_h, itag_is_audio, itag_fmt = info
+                        if itag_h:
+                            height = itag_h
+                        if itag_is_audio:
+                            is_audio = True
+                        elif itag_fmt.endswith('v'):
+                            is_video_only = True
+                        if 'webm' in itag_fmt:
+                            container = 'webm'
+                        elif 'mp4' in itag_fmt or itag_fmt == 'm4a':
+                            container = 'mp4' if not itag_is_audio else 'm4a'
+                except ValueError:
+                    pass
+
+            # resolution から height を補完 (例: "1920x1080" → 1080)
+            if not height and resolution and resolution != 'audio only':
+                try:
+                    parts = resolution.lower().split('x')
+                    if len(parts) == 2:
+                        height = int(parts[1])
+                except Exception:
+                    pass
+
+            if is_audio:
+                label = _xerox_build_label(stream_url, '', height, container or 'm4a', is_audio=True)
+                entry = {
+                    'url': stream_url, 'quality': label or 'M4A', 'format': 'audio',
+                    'container': container or 'm4a', 'hasAudio': True, 'hasVideo': False, 'isHLS': False
+                }
+            elif is_video_only:
+                label = _xerox_build_label(stream_url, '', height, container, is_audio=False, is_video_only=True)
+                entry = {
+                    'url': stream_url, 'quality': label or f'{height}p' if height else 'Auto', 'format': 'video',
+                    'container': container, 'hasAudio': False, 'hasVideo': True, 'isHLS': False
+                }
+            else:
+                label = _xerox_build_label(stream_url, '', height, container, is_audio=False)
+                entry = {
+                    'url': stream_url, 'quality': label or (f'{height}p' if height else 'Auto'), 'format': 'mp4',
+                    'container': container, 'hasAudio': True, 'hasVideo': True, 'isHLS': False
+                }
+
+            streams.append(entry)
+
+        logger.info(f"[yuzu] {video_id} → {len(streams)} streams")
+        return streams if streams else None
+    except Exception as e:
+        logger.warning(f"[yuzu] exception: {e}")
+        return None
+
+
 def fetch_min2_tube_api_list():
     """Fetch list of min2-tube API base URLs from GitHub JSON (cached 5 minutes)"""
     import time
@@ -1059,9 +1155,9 @@ def invidious_stream(video_id):
 
 @app.route('/api/stream/<video_id>')
 def get_stream(video_id):
-    """Fetch streams from xerox APIs in parallel; fall back to min2-tube API if all xerox fail.
-    Query param: exclude=xerox,min2tube  (comma-separated API group names to skip)
-    Response includes: source='xerox'|'min2tube'
+    """Fetch streams: xerox → yuzu → min2tube (フォールバック順).
+    Query param: exclude=xerox,yuzu,min2tube  (comma-separated API group names to skip)
+    Response includes: source='xerox'|'yuzu'|'min2tube'
     """
     exclude_raw = request.args.get('exclude', '')
     exclude_set = set(e.strip().lower() for e in exclude_raw.split(',') if e.strip())
@@ -1103,6 +1199,23 @@ def get_stream(video_id):
     if result_streams:
         logger.info(f"[stream/{video_id}] SUCCESS via xerox ({len(result_streams)} streams)")
         return jsonify({'streams': result_streams, 'source': used_source})
+
+    # --- yuzu API（第2フォールバック）---
+    if 'yuzu' not in exclude_set:
+        logger.info(f"[stream/{video_id}] trying yuzu API")
+        try:
+            yuzu_streams = fetch_yuzu_stream(video_id)
+            if yuzu_streams:
+                result_streams = yuzu_streams
+                used_source = 'yuzu'
+                logger.info(f"[stream/{video_id}] SUCCESS via yuzu ({len(result_streams)} streams)")
+                return jsonify({'streams': result_streams, 'source': used_source})
+            else:
+                logger.warning(f"[stream/{video_id}] yuzu returned no streams")
+        except Exception as e:
+            logger.warning(f"[stream/{video_id}] yuzu exception: {e}")
+    else:
+        logger.info(f"[stream/{video_id}] yuzu excluded")
 
     # --- min2-tube API グループ（フォールバック）---
     if 'min2tube' not in exclude_set:
