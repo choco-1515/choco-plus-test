@@ -149,7 +149,9 @@
     let ytdlpSelectedQuality = { mp4: null, video: null, audio: null, hls: null };
     let _ytdlpLogs = [];
     let _ytdlpUsedSource = null;
-    let _ytdlpExcludedSources = [];  // 累積除外済みソース一覧
+    let _ytdlpExcludedSources = [];      // 累積除外済みソース一覧
+    let _ytdlpShowAllStreams = false;     // 全項目読み込みモード（重複除去をスキップ）
+    let _ytdlpCurrentPlayingStream = null; // 現在再生中のストリームオブジェクト参照
 
     let _lastKnownTime = 0;  // プレイヤーが破棄される前に退避した再生位置
 
@@ -669,6 +671,10 @@
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 if (data.streams && data.streams.length > 0) {
                     const src = data.source || '不明';
+                    const failed = data.failed_sources || [];
+                    if (failed.length > 0) {
+                        failed.forEach(f => _ytdlpLog(`⚠️ ${f} API: ストリーム取得失敗 → 次のAPIへフォールバック`, 'warn'));
+                    }
                     _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${src}, ${elapsed}秒)`);
                     ytdlpStreams = data.streams;
                     _ytdlpUsedSource = data.source || null;
@@ -701,6 +707,8 @@
         ytdlpStreams = null;
         ytdlpCachedUrl = null;
         _ytdlpUsedSource = null;
+        _ytdlpCurrentPlayingStream = null;
+        _ytdlpShowAllStreams = false;
         currentEmbedUrl = null;
         document.getElementById('btn-ytdlp-reload-api').style.display = 'none';
         document.getElementById('btn-ytdlp-open-stream-url').style.display = 'none';
@@ -743,6 +751,21 @@
             return numB - numA;
         });
 
+        // 映像のみ・音声のみタブ: 同じラベルの重複を除去（全項目モードの場合はスキップ）
+        if (!_ytdlpShowAllStreams && (ytdlpCurrentFilter === 'video' || ytdlpCurrentFilter === 'audio')) {
+            const seenIndex = new Map();
+            const result = [];
+            filtered.forEach(s => {
+                if (!seenIndex.has(s.quality)) {
+                    seenIndex.set(s.quality, result.length);
+                    result.push(s);
+                } else if (s === _ytdlpCurrentPlayingStream) {
+                    result[seenIndex.get(s.quality)] = s;
+                }
+            });
+            filtered = result;
+        }
+
         if (filtered.length === 0) {
             const msg = document.createElement('div');
             msg.style.cssText = 'color:#aaa;font-size:13px;padding:8px 4px;';
@@ -757,11 +780,14 @@
             wrap.className = 'quality-option-wrap';
 
             const btn = document.createElement('button');
-            const isSelected = savedQ ? stream.quality === savedQ : i === 0;
+            const isSelected = _ytdlpCurrentPlayingStream
+                ? stream === _ytdlpCurrentPlayingStream
+                : (savedQ ? stream.quality === savedQ : i === 0);
             btn.className = 'quality-option' + (isSelected ? ' selected' : '');
             btn.dataset.streamUrl = stream.url;
             btn.textContent = stream.quality;
             btn.onclick = () => {
+                _ytdlpCurrentPlayingStream = stream;
                 ytdlpSelectedQuality[ytdlpCurrentFilter] = stream.quality;
                 document.querySelectorAll('#ytdlpQualityOptions .quality-option').forEach(b => {
                     b.classList.toggle('selected', b.dataset.streamUrl === stream.url);
@@ -784,6 +810,18 @@
             wrap.appendChild(chk);
             optionsDiv.appendChild(wrap);
         });
+
+        // 映像のみ・音声のみタブに「全項目読み込み」トグルボタンを追加
+        if (ytdlpCurrentFilter === 'video' || ytdlpCurrentFilter === 'audio') {
+            const toggleBtn = document.createElement('button');
+            toggleBtn.id = 'btn-ytdlp-show-all-streams';
+            toggleBtn.textContent = _ytdlpShowAllStreams ? '各項目ごとに読み込み' : '全項目読み込み';
+            toggleBtn.onclick = () => {
+                _ytdlpShowAllStreams = !_ytdlpShowAllStreams;
+                renderYtdlpQualityOptions();
+            };
+            optionsDiv.appendChild(toggleBtn);
+        }
     }
 
     // ---- ytdlp 最初の画質を自動再生 ----
@@ -804,6 +842,7 @@
         }
         const savedQ = ytdlpSelectedQuality[ytdlpCurrentFilter];
         const target = (savedQ && filtered.find(s => s.quality === savedQ)) || filtered[0];
+        _ytdlpCurrentPlayingStream = target;
         playStream(target);
     }
 
@@ -1126,6 +1165,8 @@
             ytdlpCachedUrl = null;
             _ytdlpUsedSource = null;
             _ytdlpExcludedSources = [];
+            _ytdlpCurrentPlayingStream = null;
+            _ytdlpShowAllStreams = false;
             _ytdlpLogs.length = 0;
             currentEmbedUrl = null;
             document.getElementById('ytdlpQualityOptions').innerHTML = '';
