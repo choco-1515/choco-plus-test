@@ -635,6 +635,15 @@ main {
     background: rgba(255,255,255,0.07);
 }
 
+.channel-icon-link {
+    display: inline-flex;
+    flex-shrink: 0;
+    border-radius: 50%;
+    outline: none;
+    transition: opacity 0.15s;
+}
+.channel-icon-link:hover { opacity: 0.82; }
+
 .channel-icon {
     width: 40px;
     height: 40px;
@@ -642,9 +651,23 @@ main {
     background: #333;
     flex-shrink: 0;
     object-fit: cover;
+    display: block;
 }
 
 .channel-details { flex: 1; min-width: 0; }
+
+.channel-name-link {
+    display: block;
+    text-decoration: none;
+    color: #fff;
+    font-weight: 600;
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.15s;
+}
+.channel-name-link:hover { color: #ccc; }
 
 .channel-name {
     font-weight: 600;
