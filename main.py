@@ -1151,6 +1151,7 @@ def watch(video_id):
         'view_count': None,
         'published_at': None,
         'channel_name': None,
+        'channel_id': None,
         'subscriber_count': None,
         'channel_icon': None
     }
@@ -1185,6 +1186,7 @@ def watch(video_id):
                         metadata['view_count'] = str(view_count)
 
                     channel_id = item['snippet']['channelId']
+                    metadata['channel_id'] = channel_id
                     channel_url = (
                         f"https://www.googleapis.com/youtube/v3/"
                         f"channels?part=snippet,statistics&id="
