@@ -325,7 +325,8 @@ main {
     flex-wrap: wrap;
 }
 
-#btn-show-all-streams {
+#btn-show-all-streams,
+#btn-ytdlp-show-all-streams {
     background: #2a2a2a;
     color: #aaa;
     border: 1px solid #555;
@@ -338,7 +339,8 @@ main {
     align-self: flex-end;
     flex-shrink: 0;
 }
-#btn-show-all-streams:hover { background: #383838; color: #fff; }
+#btn-show-all-streams:hover,
+#btn-ytdlp-show-all-streams:hover { background: #383838; color: #fff; }
 
 .quality-option-wrap {
     display: inline-flex;
