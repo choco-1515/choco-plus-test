@@ -550,6 +550,8 @@
 
     // 初期ロード（前回選んだ再生方法を復元）
     const STREAM_TYPE_KEY = 'preferred_stream_type';
+    const YTDLP_FILTER_KEY = 'preferred_ytdlp_filter';
+    const INV_FILTER_KEY = 'preferred_inv_filter';
     const _savedStreamType = localStorage.getItem(STREAM_TYPE_KEY);
     switchStream(['ytdlp', 'invidious', 'nocookie'].includes(_savedStreamType) ? _savedStreamType : 'ytdlp');
 
@@ -682,8 +684,9 @@
                     _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${src}, ${elapsed}秒)`);
                     ytdlpStreams = data.streams;
                     _ytdlpUsedSource = data.source || null;
-                    ytdlpCurrentFilter = 'mp4';
-                    updateYtdlpQualityTabs('mp4');
+                    const _savedYtdlpFilter = localStorage.getItem(YTDLP_FILTER_KEY);
+                    ytdlpCurrentFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedYtdlpFilter) ? _savedYtdlpFilter : 'mp4';
+                    updateYtdlpQualityTabs(ytdlpCurrentFilter);
                     renderYtdlpQualityOptions();
                     playFirstYtdlpAvailable();
                     _closeYtdlpLogOverlay();
@@ -723,6 +726,7 @@
     // ---- ytdlp 画質フィルタ切り替え ----
     function switchYtdlpQualityFilter(filter) {
         ytdlpCurrentFilter = filter;
+        try { localStorage.setItem(YTDLP_FILTER_KEY, filter); } catch {}
         updateYtdlpQualityTabs(filter);
         renderYtdlpQualityOptions();
         playFirstYtdlpAvailable();
@@ -855,8 +859,9 @@
         invidiousStreams = result.streams;
         currentInvidiousCombo = { instance: result.instance || 'backend', proxy: result.proxy ?? 'backend' };
         _usedInvidiousCombos.push(currentInvidiousCombo);
-        currentQualityFilter = 'mp4';
-        updateQualityTabs('mp4');
+        const _savedInvFilter = localStorage.getItem(INV_FILTER_KEY);
+        currentQualityFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedInvFilter) ? _savedInvFilter : 'mp4';
+        updateQualityTabs(currentQualityFilter);
         renderQualityOptions();
         playFirstAvailable();
         _closeLogOverlay();
@@ -1012,6 +1017,7 @@
     // ---- 画質フィルタ切り替え ----
     function switchQualityFilter(filter) {
         currentQualityFilter = filter;
+        try { localStorage.setItem(INV_FILTER_KEY, filter); } catch {}
         updateQualityTabs(filter);
         renderQualityOptions();
         playFirstAvailable();
