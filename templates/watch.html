@@ -157,6 +157,36 @@
     let _ytdlpShowAllStreams = false;     // 全項目読み込みモード（重複除去をスキップ）
     let _ytdlpCurrentPlayingStream = null; // 現在再生中のストリームオブジェクト参照
 
+    // タブ表示状態: null=全表示 / 'no-hls'=HLSタブ非表示 / 'hls-only'=HLS以外非表示
+    let _ytdlpTabState = null;
+    let _invTabState = null;
+
+    function _applyYtdlpTabVisibility(state) {
+        const allTabs = ['mp4', 'video', 'audio', 'hls'];
+        if (state === 'no-hls') {
+            document.getElementById('ytdlp-tab-hls').style.display = 'none';
+            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('ytdlp-tab-' + t).style.display = '');
+        } else if (state === 'hls-only') {
+            document.getElementById('ytdlp-tab-hls').style.display = '';
+            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('ytdlp-tab-' + t).style.display = 'none');
+        } else {
+            allTabs.forEach(t => document.getElementById('ytdlp-tab-' + t).style.display = '');
+        }
+    }
+
+    function _applyInvTabVisibility(state) {
+        const allTabs = ['mp4', 'video', 'audio', 'hls'];
+        if (state === 'no-hls') {
+            document.getElementById('tab-hls').style.display = 'none';
+            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('tab-' + t).style.display = '');
+        } else if (state === 'hls-only') {
+            document.getElementById('tab-hls').style.display = '';
+            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('tab-' + t).style.display = 'none');
+        } else {
+            allTabs.forEach(t => document.getElementById('tab-' + t).style.display = '');
+        }
+    }
+
     let _lastKnownTime = 0;  // プレイヤーが破棄される前に退避した再生位置
 
     // ---- コンソールログキャプチャ (Invidious取得中のログ表示用) ----
@@ -638,6 +668,7 @@
     // ---- ytdlp ストリーム ----
     function loadYtdlpStream(excludeSource) {
         if (ytdlpStreams && !excludeSource) {
+            _applyYtdlpTabVisibility(_ytdlpTabState);
             renderYtdlpQualityOptions();
             playFirstYtdlpAvailable();
             // ボタン表示状態を復元（他の再生方法から戻った際に隠れていた場合）
@@ -688,8 +719,26 @@
                     _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${srcLabel}, ${elapsed}秒)`);
                     ytdlpStreams = data.streams;
                     _ytdlpUsedSource = data.source || null;
-                    const _savedYtdlpFilter = localStorage.getItem(YTDLP_FILTER_KEY);
-                    ytdlpCurrentFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedYtdlpFilter) ? _savedYtdlpFilter : 'mp4';
+                    // タブ状態をストリーム内容に基づき決定
+                    const _hasYtdlpHLS = data.streams.some(s => s.isHLS);
+                    const _hasYtdlpNonHLS = data.streams.some(s => !s.isHLS);
+                    if (!_hasYtdlpHLS) {
+                        _ytdlpTabState = 'no-hls';
+                    } else if (!_hasYtdlpNonHLS) {
+                        _ytdlpTabState = 'hls-only';
+                    } else {
+                        _ytdlpTabState = null;
+                    }
+                    _applyYtdlpTabVisibility(_ytdlpTabState);
+                    // フィルター決定: HLSのみ→強制HLS / HLSなし→強制mp4 / 混在→保存値を復元
+                    if (_ytdlpTabState === 'hls-only') {
+                        ytdlpCurrentFilter = 'hls';
+                    } else if (_ytdlpTabState === 'no-hls') {
+                        ytdlpCurrentFilter = 'mp4';
+                    } else {
+                        const _savedYtdlpFilter = localStorage.getItem(YTDLP_FILTER_KEY);
+                        ytdlpCurrentFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedYtdlpFilter) ? _savedYtdlpFilter : 'mp4';
+                    }
                     updateYtdlpQualityTabs(ytdlpCurrentFilter);
                     renderYtdlpQualityOptions();
                     playFirstYtdlpAvailable();
@@ -862,8 +911,26 @@
         invidiousStreams = result.streams;
         currentInvidiousCombo = { instance: result.instance || 'backend', proxy: result.proxy ?? 'backend' };
         _usedInvidiousCombos.push(currentInvidiousCombo);
-        const _savedInvFilter = localStorage.getItem(INV_FILTER_KEY);
-        currentQualityFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedInvFilter) ? _savedInvFilter : 'mp4';
+        // タブ状態をストリーム内容に基づき決定
+        const _hasInvHLS = result.streams.some(s => s.isHLS);
+        const _hasInvNonHLS = result.streams.some(s => !s.isHLS);
+        if (!_hasInvHLS) {
+            _invTabState = 'no-hls';
+        } else if (!_hasInvNonHLS) {
+            _invTabState = 'hls-only';
+        } else {
+            _invTabState = null;
+        }
+        _applyInvTabVisibility(_invTabState);
+        // フィルター決定: HLSのみ→強制HLS / HLSなし→強制mp4 / 混在→保存値を復元
+        if (_invTabState === 'hls-only') {
+            currentQualityFilter = 'hls';
+        } else if (_invTabState === 'no-hls') {
+            currentQualityFilter = 'mp4';
+        } else {
+            const _savedInvFilter = localStorage.getItem(INV_FILTER_KEY);
+            currentQualityFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedInvFilter) ? _savedInvFilter : 'mp4';
+        }
         updateQualityTabs(currentQualityFilter);
         renderQualityOptions();
         playFirstAvailable();
@@ -896,6 +963,7 @@
     // ---- Invidious ストリーム（ブラウザから直接クライアントサイドレース）----
     function loadInvidiousStream() {
         if (invidiousStreams) {
+            _applyInvTabVisibility(_invTabState);
             renderQualityOptions();
             playFirstAvailable();
             // 以前に成功していたらボタンを再表示
