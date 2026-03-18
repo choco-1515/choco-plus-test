@@ -1,4 +1,4 @@
-https://replit.com/@a0966a13/j-2#templates/watch.html a0966a2@hotmail.com 3/19最新コード
+https://replit.com/@a0966a13/j-2#templates/watch.html a0966a2@hotmail.com 3/19最新コード　<br>
 https://replit.com/@a0966a11/j-2#static/style.css　@a0966a@hotmail.com 3/18最新コード
 
 #### コンソールでドの組み合わせが成功したか見れるらしい(inv)
