@@ -161,30 +161,34 @@
     let _ytdlpTabState = null;
     let _invTabState = null;
 
-    function _applyYtdlpTabVisibility(state) {
-        const allTabs = ['mp4', 'video', 'audio', 'hls'];
-        if (state === 'no-hls') {
-            document.getElementById('ytdlp-tab-hls').style.display = 'none';
-            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('ytdlp-tab-' + t).style.display = '');
-        } else if (state === 'hls-only') {
-            document.getElementById('ytdlp-tab-hls').style.display = '';
-            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('ytdlp-tab-' + t).style.display = 'none');
-        } else {
-            allTabs.forEach(t => document.getElementById('ytdlp-tab-' + t).style.display = '');
-        }
+    // ---- タブ表示・状態計算・フィルター決定 共通ヘルパー ----
+    function _applyTabVisibility(prefix, state) {
+        const tabs = ['mp4', 'video', 'audio', 'hls'];
+        const show = state === 'hls-only' ? new Set(['hls'])
+                   : state === 'no-hls'   ? new Set(['mp4', 'video', 'audio'])
+                   :                        new Set(tabs);
+        tabs.forEach(t => { document.getElementById(prefix + t).style.display = show.has(t) ? '' : 'none'; });
+    }
+    function _applyYtdlpTabVisibility(state) { _applyTabVisibility('ytdlp-tab-', state); }
+    function _applyInvTabVisibility(state)   { _applyTabVisibility('tab-', state); }
+
+    function _calcTabState(streams) {
+        const hasHLS    = streams.some(s => s.isHLS);
+        const hasNonHLS = streams.some(s => !s.isHLS);
+        return !hasHLS ? 'no-hls' : !hasNonHLS ? 'hls-only' : null;
     }
 
-    function _applyInvTabVisibility(state) {
-        const allTabs = ['mp4', 'video', 'audio', 'hls'];
-        if (state === 'no-hls') {
-            document.getElementById('tab-hls').style.display = 'none';
-            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('tab-' + t).style.display = '');
-        } else if (state === 'hls-only') {
-            document.getElementById('tab-hls').style.display = '';
-            ['mp4', 'video', 'audio'].forEach(t => document.getElementById('tab-' + t).style.display = 'none');
-        } else {
-            allTabs.forEach(t => document.getElementById('tab-' + t).style.display = '');
-        }
+    function _filterForState(state, storageKey) {
+        if (state === 'hls-only') return 'hls';
+        if (state === 'no-hls')   return 'mp4';
+        const saved = localStorage.getItem(storageKey);
+        return ['mp4', 'video', 'audio', 'hls'].includes(saved) ? saved : 'mp4';
+    }
+
+    // 品質ラベルを数値化（ソート用）: "HLS 1080p60fps" → 1080060, "720p" → 720000
+    function _qStreamNum(q) {
+        const m = q.match(/(\d+)p(?:(\d+)fps)?/i);
+        return m ? parseInt(m[1]) * 1000 + (m[2] ? parseInt(m[2]) : 0) : (parseInt(q) || 0);
     }
 
     let _lastKnownTime = 0;  // プレイヤーが破棄される前に退避した再生位置
@@ -579,9 +583,10 @@
     }
 
     // 初期ロード（前回選んだ再生方法を復元）
-    const STREAM_TYPE_KEY = 'preferred_stream_type';
+    const STREAM_TYPE_KEY  = 'preferred_stream_type';
     const YTDLP_FILTER_KEY = 'preferred_ytdlp_filter';
-    const INV_FILTER_KEY = 'preferred_inv_filter';
+    const INV_FILTER_KEY   = 'preferred_inv_filter';
+    const _YTDLP_SRC_MAP   = { xerox: 'xerox API', yuzu: 'yuzu API', siawase: 'しあ API', min2tube: 'min2-tube API' };
     const _savedStreamType = localStorage.getItem(STREAM_TYPE_KEY);
     switchStream(['ytdlp', 'invidious', 'nocookie'].includes(_savedStreamType) ? _savedStreamType : 'ytdlp');
 
@@ -686,16 +691,12 @@
         let url = '/api/stream/' + videoId;
         if (excludeSource) url += '?exclude=' + encodeURIComponent(excludeSource);
 
-        const _allSources = ['xerox API', 'yuzu API', 'しあ API', 'min2-tube API'];
         const _excludeSet = excludeSource
             ? new Set(excludeSource.split(',').map(s => s.trim().toLowerCase()))
             : new Set();
-        const _srcMap = { 'xerox': 'xerox API', 'yuzu': 'yuzu API', 'siawase': 'しあ API', 'min2tube': 'min2-tube API' };
-        const sourceLabel = _allSources
-            .filter(label => {
-                const key = Object.keys(_srcMap).find(k => _srcMap[k] === label);
-                return !_excludeSet.has(key);
-            })
+        const sourceLabel = Object.entries(_YTDLP_SRC_MAP)
+            .filter(([k]) => !_excludeSet.has(k))
+            .map(([, v]) => v)
             .join(' / ') || '(全API除外)';
         _ytdlpLog(`ストリーム取得を開始します... [対象: ${sourceLabel}]`);
         _ytdlpLog(`APIリクエスト送信中: ${url}`);
@@ -708,37 +709,15 @@
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 if (data.streams && data.streams.length > 0) {
                     const src = data.source || '不明';
-                    const failed = data.failed_sources || [];
-                    if (failed.length > 0) {
-                        failed.forEach(f => {
-                            const fLabel = _srcMap[f] || (f + ' API');
-                            _ytdlpLog(`⚠️ ${fLabel}: ストリーム取得失敗 → 次のAPIへフォールバック`, 'warn');
-                        });
-                    }
-                    const srcLabel = _srcMap[src] || src;
-                    _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${srcLabel}, ${elapsed}秒)`);
+                    (data.failed_sources || []).forEach(f =>
+                        _ytdlpLog(`⚠️ ${_YTDLP_SRC_MAP[f] || f + ' API'}: ストリーム取得失敗 → 次のAPIへフォールバック`, 'warn')
+                    );
+                    _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${_YTDLP_SRC_MAP[src] || src}, ${elapsed}秒)`);
                     ytdlpStreams = data.streams;
                     _ytdlpUsedSource = data.source || null;
-                    // タブ状態をストリーム内容に基づき決定
-                    const _hasYtdlpHLS = data.streams.some(s => s.isHLS);
-                    const _hasYtdlpNonHLS = data.streams.some(s => !s.isHLS);
-                    if (!_hasYtdlpHLS) {
-                        _ytdlpTabState = 'no-hls';
-                    } else if (!_hasYtdlpNonHLS) {
-                        _ytdlpTabState = 'hls-only';
-                    } else {
-                        _ytdlpTabState = null;
-                    }
+                    _ytdlpTabState = _calcTabState(data.streams);
                     _applyYtdlpTabVisibility(_ytdlpTabState);
-                    // フィルター決定: HLSのみ→強制HLS / HLSなし→強制mp4 / 混在→保存値を復元
-                    if (_ytdlpTabState === 'hls-only') {
-                        ytdlpCurrentFilter = 'hls';
-                    } else if (_ytdlpTabState === 'no-hls') {
-                        ytdlpCurrentFilter = 'mp4';
-                    } else {
-                        const _savedYtdlpFilter = localStorage.getItem(YTDLP_FILTER_KEY);
-                        ytdlpCurrentFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedYtdlpFilter) ? _savedYtdlpFilter : 'mp4';
-                    }
+                    ytdlpCurrentFilter = _filterForState(_ytdlpTabState, YTDLP_FILTER_KEY);
                     updateYtdlpQualityTabs(ytdlpCurrentFilter);
                     renderYtdlpQualityOptions();
                     playFirstYtdlpAvailable();
@@ -806,10 +785,7 @@
             filtered = ytdlpStreams.filter(s => !s.isHLS && s.format === ytdlpCurrentFilter);
         }
 
-        filtered.sort((a, b) => {
-            const _qNum = q => { const m = q.match(/(\d+)p(?:(\d+)fps)?/i); return m ? parseInt(m[1]) * 1000 + (m[2] ? parseInt(m[2]) : 0) : (parseInt(q) || 0); };
-            return _qNum(b.quality) - _qNum(a.quality);
-        });
+        filtered.sort((a, b) => _qStreamNum(b.quality) - _qStreamNum(a.quality));
 
         // 映像のみ・音声のみタブ: 同じラベルの重複を除去（全項目モードの場合はスキップ）
         if (!_ytdlpShowAllStreams && (ytdlpCurrentFilter === 'video' || ytdlpCurrentFilter === 'audio')) {
@@ -911,26 +887,9 @@
         invidiousStreams = result.streams;
         currentInvidiousCombo = { instance: result.instance || 'backend', proxy: result.proxy ?? 'backend' };
         _usedInvidiousCombos.push(currentInvidiousCombo);
-        // タブ状態をストリーム内容に基づき決定
-        const _hasInvHLS = result.streams.some(s => s.isHLS);
-        const _hasInvNonHLS = result.streams.some(s => !s.isHLS);
-        if (!_hasInvHLS) {
-            _invTabState = 'no-hls';
-        } else if (!_hasInvNonHLS) {
-            _invTabState = 'hls-only';
-        } else {
-            _invTabState = null;
-        }
+        _invTabState = _calcTabState(result.streams);
         _applyInvTabVisibility(_invTabState);
-        // フィルター決定: HLSのみ→強制HLS / HLSなし→強制mp4 / 混在→保存値を復元
-        if (_invTabState === 'hls-only') {
-            currentQualityFilter = 'hls';
-        } else if (_invTabState === 'no-hls') {
-            currentQualityFilter = 'mp4';
-        } else {
-            const _savedInvFilter = localStorage.getItem(INV_FILTER_KEY);
-            currentQualityFilter = ['mp4', 'video', 'audio', 'hls'].includes(_savedInvFilter) ? _savedInvFilter : 'mp4';
-        }
+        currentQualityFilter = _filterForState(_invTabState, INV_FILTER_KEY);
         updateQualityTabs(currentQualityFilter);
         renderQualityOptions();
         playFirstAvailable();
@@ -1138,10 +1097,7 @@
         }
 
         // 解像度・ビットレートで降順ソート（HLS含む）
-        filtered.sort((a, b) => {
-            const _qNum = q => { const m = q.match(/(\d+)p(?:(\d+)fps)?/i); return m ? parseInt(m[1]) * 1000 + (m[2] ? parseInt(m[2]) : 0) : (parseInt(q) || 0); };
-            return _qNum(b.quality) - _qNum(a.quality);
-        });
+        filtered.sort((a, b) => _qStreamNum(b.quality) - _qStreamNum(a.quality));
 
         // 同じラベルの重複を除去（全項目モードの場合はスキップ）
         // 再生中のストリームは同ラベルの他のものより優先して残す
