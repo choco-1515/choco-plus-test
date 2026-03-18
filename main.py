@@ -671,6 +671,7 @@ def fetch_xerox_stream(api_url, video_id):
 
 
 YUZU_API_BASE = "https://yudlp.vercel.app"
+SIAWASE_API_BASE = "https://siawaseok.f5.si"
 
 def fetch_yuzu_stream(video_id):
     """Fetch stream data from Yuzu API (https://yudlp.vercel.app/stream/{video_id}).
@@ -774,6 +775,154 @@ def fetch_yuzu_stream(video_id):
         return streams if streams else None
     except Exception as e:
         logger.warning(f"[yuzu] exception: {e}")
+        return None
+
+
+_SIAWASE_HLS_ITAGS = {
+    91: 144, 92: 240, 93: 360, 94: 480, 95: 720, 96: 1080,
+    300: 720, 301: 1080,
+}
+
+def fetch_siawase_stream(video_id):
+    """Fetch stream data from しあ API (https://siawaseok.f5.si/api/streams/{video_id}).
+    Response format is yt-dlp compatible: top-level 'formats' list.
+    HLS streams are identified by known HLS itags (91-96, 300, 301) or hls_playlist URL pattern.
+    Returns a list of stream dicts compatible with the rest of the pipeline, or None on failure.
+    """
+    url = f"{SIAWASE_API_BASE}/api/streams/{video_id}"
+    try:
+        response = requests.get(url, timeout=15)
+        logger.info(f"[siawase] {url} → status={response.status_code}")
+        if response.status_code != 200:
+            logger.warning(f"[siawase] non-200 status: {response.status_code}")
+            return None
+        data = response.json()
+        formats = data.get('formats', [])
+        if not formats:
+            logger.warning(f"[siawase] no formats in response")
+            return None
+
+        seen_urls = set()
+        streams = []
+
+        # トップレベルの HLS URL フィールドに対応
+        hls_url = data.get('hls_url') or data.get('hlsUrl') or data.get('manifest_url')
+        if hls_url and hls_url not in seen_urls:
+            seen_urls.add(hls_url)
+            streams.append({
+                'url': hls_url, 'quality': 'Auto (HLS)', 'format': 'hls',
+                'container': 'm3u8', 'hasAudio': True, 'hasVideo': True, 'isHLS': True
+            })
+
+        for fmt in formats:
+            stream_url = fmt.get('url', '')
+            if not stream_url or stream_url in seen_urls:
+                continue
+            seen_urls.add(stream_url)
+
+            itag_str = str(fmt.get('itag', ''))
+            ext = fmt.get('ext', 'mp4')
+            resolution = fmt.get('resolution', '')
+
+            # HLS 判定: m3u8 拡張子、HLS既知itag、またはURL内に hls_playlist を含む場合
+            is_hls = False
+            hls_height = 0
+            if ext == 'm3u8':
+                is_hls = True
+            elif itag_str:
+                try:
+                    itag_int = int(itag_str)
+                    if itag_int in _SIAWASE_HLS_ITAGS:
+                        is_hls = True
+                        hls_height = _SIAWASE_HLS_ITAGS[itag_int]
+                except ValueError:
+                    pass
+            if not is_hls and 'hls_playlist' in stream_url:
+                is_hls = True
+
+            if is_hls:
+                # resolution から高さを補完
+                if not hls_height and resolution and 'x' in resolution:
+                    try:
+                        hls_height = int(resolution.lower().split('x')[1])
+                    except Exception:
+                        pass
+                fps = fmt.get('fps')
+                fps_str = f'{fps}fps' if fps and int(fps) > 30 else ''
+                quality_label = f'HLS {hls_height}p{fps_str}' if hls_height else 'HLS'
+                streams.append({
+                    'url': stream_url, 'quality': quality_label, 'format': 'hls',
+                    'container': 'm3u8', 'hasAudio': True, 'hasVideo': True, 'isHLS': True
+                })
+                continue
+
+            height = 0
+            is_audio = False
+            is_video_only = False
+            is_combined = False
+            container = ext
+
+            if resolution == 'audio only':
+                is_audio = True
+
+            if itag_str:
+                try:
+                    itag_int = int(itag_str)
+                    info = _ITAG_INFO.get(itag_int)
+                    if info:
+                        itag_h, itag_is_audio, itag_fmt = info
+                        if itag_h:
+                            height = itag_h
+                        if itag_is_audio:
+                            is_audio = True
+                        elif itag_fmt.endswith('v'):
+                            is_video_only = True
+                        else:
+                            is_combined = True
+                        if 'webm' in itag_fmt:
+                            container = 'webm'
+                        elif 'mp4' in itag_fmt or itag_fmt == 'm4a':
+                            container = 'mp4' if not itag_is_audio else 'm4a'
+                except ValueError:
+                    pass
+
+            if not height and resolution and resolution != 'audio only':
+                try:
+                    parts = resolution.lower().split('x')
+                    if len(parts) == 2:
+                        height = int(parts[1])
+                except Exception:
+                    pass
+
+            if not is_audio and not is_video_only and not is_combined:
+                if 'x' in resolution:
+                    is_video_only = True
+
+            if is_audio:
+                label = _xerox_build_label(stream_url, '', height, container or 'm4a', is_audio=True)
+                entry = {
+                    'url': stream_url, 'quality': label or 'M4A', 'format': 'audio',
+                    'container': container or 'm4a', 'hasAudio': True, 'hasVideo': False, 'isHLS': False
+                }
+            elif is_video_only:
+                label = _xerox_build_label(stream_url, '', height, container, is_audio=False, is_video_only=True)
+                entry = {
+                    'url': stream_url, 'quality': label or (f'{height}p' if height else 'Auto'), 'format': 'video',
+                    'container': container, 'hasAudio': False, 'hasVideo': True, 'isHLS': False
+                }
+            else:
+                label = _xerox_build_label(stream_url, '', height, container, is_audio=False)
+                entry = {
+                    'url': stream_url, 'quality': label or (f'{height}p' if height else 'Auto'), 'format': 'mp4',
+                    'container': container, 'hasAudio': True, 'hasVideo': True, 'isHLS': False
+                }
+
+            streams.append(entry)
+
+        logger.info(f"[siawase] {video_id} → {len(streams)} streams")
+        return streams if streams else None
+    except Exception as e:
+        logger.warning(f"[siawase] exception: {e}")
         return None
 
 
@@ -1166,9 +1315,9 @@ def invidious_stream(video_id):
 
 @app.route('/api/stream/<video_id>')
 def get_stream(video_id):
-    """Fetch streams: xerox → yuzu → min2tube (フォールバック順).
-    Query param: exclude=xerox,yuzu,min2tube  (comma-separated API group names to skip)
-    Response includes: source='xerox'|'yuzu'|'min2tube'
+    """Fetch streams: xerox → yuzu → siawase → min2tube (フォールバック順).
+    Query param: exclude=xerox,yuzu,siawase,min2tube  (comma-separated API group names to skip)
+    Response includes: source='xerox'|'yuzu'|'siawase'|'min2tube'
     """
     exclude_raw = request.args.get('exclude', '')
     exclude_set = set(e.strip().lower() for e in exclude_raw.split(',') if e.strip())
@@ -1233,6 +1382,25 @@ def get_stream(video_id):
             failed_sources.append('yuzu')
     else:
         logger.info(f"[stream/{video_id}] yuzu excluded")
+
+    # --- しあ API（第3フォールバック）---
+    if 'siawase' not in exclude_set:
+        logger.info(f"[stream/{video_id}] trying siawase API")
+        try:
+            siawase_streams = fetch_siawase_stream(video_id)
+            if siawase_streams:
+                result_streams = siawase_streams
+                used_source = 'siawase'
+                logger.info(f"[stream/{video_id}] SUCCESS via siawase ({len(result_streams)} streams)")
+                return jsonify({'streams': result_streams, 'source': used_source, 'failed_sources': failed_sources})
+            else:
+                logger.warning(f"[stream/{video_id}] siawase returned no streams")
+                failed_sources.append('siawase')
+        except Exception as e:
+            logger.warning(f"[stream/{video_id}] siawase exception: {e}")
+            failed_sources.append('siawase')
+    else:
+        logger.info(f"[stream/{video_id}] siawase excluded")
 
     # --- min2-tube API グループ（フォールバック）---
     if 'min2tube' not in exclude_set:
