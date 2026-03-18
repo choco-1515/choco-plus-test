@@ -534,6 +534,12 @@ _ITAG_INFO = {
     249: (0, True, 'webma'), 250: (0, True, 'webma'), 251: (0, True, 'webma'),
 }
 
+# HLS ライブ配信の既知 itag → 高さ (px) のマップ
+_HLS_LIVE_ITAGS = {
+    91: 144, 92: 240, 93: 360, 94: 480, 95: 720, 96: 1080,
+    300: 720, 301: 1080,
+}
+
 
 def _xerox_build_label(url, quality='', height=0, container='mp4', is_audio=False, is_video_only=False):
     """URLパラメータと形式情報からボタン用ラベルを生成する"""
@@ -702,6 +708,32 @@ def fetch_yuzu_stream(video_id):
             ext = fmt.get('ext', 'mp4')
             resolution = fmt.get('resolution', '')
 
+            # HLS 判定: HLS既知itag、m3u8拡張子、またはURL内に hls_playlist を含む場合
+            is_hls = ext == 'm3u8' or 'hls_playlist' in stream_url
+            hls_height = 0
+            if not is_hls and itag_str:
+                try:
+                    itag_int = int(itag_str)
+                    if itag_int in _HLS_LIVE_ITAGS:
+                        is_hls = True
+                        hls_height = _HLS_LIVE_ITAGS[itag_int]
+                except ValueError:
+                    pass
+            if is_hls:
+                if not hls_height and resolution and 'x' in resolution:
+                    try:
+                        hls_height = int(resolution.lower().split('x')[1])
+                    except Exception:
+                        pass
+                fps = fmt.get('fps')
+                fps_str = f'{fps}fps' if fps and int(fps) > 30 else ''
+                quality_label = f'HLS {hls_height}p{fps_str}' if hls_height else 'HLS'
+                streams.append({
+                    'url': stream_url, 'quality': quality_label, 'format': 'hls',
+                    'container': 'm3u8', 'hasAudio': True, 'hasVideo': True, 'isHLS': True
+                })
+                continue
+
             # itag 解析で種別・品質を決定
             height = 0
             is_audio = False
@@ -778,11 +810,6 @@ def fetch_yuzu_stream(video_id):
         return None
 
 
-_SIAWASE_HLS_ITAGS = {
-    91: 144, 92: 240, 93: 360, 94: 480, 95: 720, 96: 1080,
-    300: 720, 301: 1080,
-}
-
 def fetch_siawase_stream(video_id):
     """Fetch stream data from しあ API (https://siawaseok.f5.si/api/streams/{video_id}).
     Response format is yt-dlp compatible: top-level 'formats' list.
@@ -832,9 +859,9 @@ def fetch_siawase_stream(video_id):
             elif itag_str:
                 try:
                     itag_int = int(itag_str)
-                    if itag_int in _SIAWASE_HLS_ITAGS:
+                    if itag_int in _HLS_LIVE_ITAGS:
                         is_hls = True
-                        hls_height = _SIAWASE_HLS_ITAGS[itag_int]
+                        hls_height = _HLS_LIVE_ITAGS[itag_int]
                 except ValueError:
                     pass
             if not is_hls and 'hls_playlist' in stream_url:
