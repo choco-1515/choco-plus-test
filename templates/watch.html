@@ -655,11 +655,11 @@
         let url = '/api/stream/' + videoId;
         if (excludeSource) url += '?exclude=' + encodeURIComponent(excludeSource);
 
-        const _allSources = ['xerox API', 'yuzu API', 'min2-tube API'];
+        const _allSources = ['xerox API', 'yuzu API', 'しあ API', 'min2-tube API'];
         const _excludeSet = excludeSource
             ? new Set(excludeSource.split(',').map(s => s.trim().toLowerCase()))
             : new Set();
-        const _srcMap = { 'xerox': 'xerox API', 'yuzu': 'yuzu API', 'min2tube': 'min2-tube API' };
+        const _srcMap = { 'xerox': 'xerox API', 'yuzu': 'yuzu API', 'siawase': 'しあ API', 'min2tube': 'min2-tube API' };
         const sourceLabel = _allSources
             .filter(label => {
                 const key = Object.keys(_srcMap).find(k => _srcMap[k] === label);
@@ -679,9 +679,13 @@
                     const src = data.source || '不明';
                     const failed = data.failed_sources || [];
                     if (failed.length > 0) {
-                        failed.forEach(f => _ytdlpLog(`⚠️ ${f} API: ストリーム取得失敗 → 次のAPIへフォールバック`, 'warn'));
+                        failed.forEach(f => {
+                            const fLabel = _srcMap[f] || (f + ' API');
+                            _ytdlpLog(`⚠️ ${fLabel}: ストリーム取得失敗 → 次のAPIへフォールバック`, 'warn');
+                        });
                     }
-                    _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${src}, ${elapsed}秒)`);
+                    const srcLabel = _srcMap[src] || src;
+                    _ytdlpLog(`✅ 取得成功 (${data.streams.length}件, ソース: ${srcLabel}, ${elapsed}秒)`);
                     ytdlpStreams = data.streams;
                     _ytdlpUsedSource = data.source || null;
                     const _savedYtdlpFilter = localStorage.getItem(YTDLP_FILTER_KEY);
