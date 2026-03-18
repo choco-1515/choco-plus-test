@@ -758,9 +758,8 @@
         }
 
         filtered.sort((a, b) => {
-            const numA = parseInt(a.quality) || 0;
-            const numB = parseInt(b.quality) || 0;
-            return numB - numA;
+            const _qNum = q => { const m = q.match(/(\d+)p(?:(\d+)fps)?/i); return m ? parseInt(m[1]) * 1000 + (m[2] ? parseInt(m[2]) : 0) : (parseInt(q) || 0); };
+            return _qNum(b.quality) - _qNum(a.quality);
         });
 
         // 映像のみ・音声のみタブ: 同じラベルの重複を除去（全項目モードの場合はスキップ）
@@ -1070,11 +1069,10 @@
             filtered = invidiousStreams.filter(s => !s.isHLS && s.format === currentQualityFilter);
         }
 
-        // 解像度・ビットレートで降順ソート
+        // 解像度・ビットレートで降順ソート（HLS含む）
         filtered.sort((a, b) => {
-            const numA = parseInt(a.quality) || 0;
-            const numB = parseInt(b.quality) || 0;
-            return numB - numA;
+            const _qNum = q => { const m = q.match(/(\d+)p(?:(\d+)fps)?/i); return m ? parseInt(m[1]) * 1000 + (m[2] ? parseInt(m[2]) : 0) : (parseInt(q) || 0); };
+            return _qNum(b.quality) - _qNum(a.quality);
         });
 
         // 同じラベルの重複を除去（全項目モードの場合はスキップ）
