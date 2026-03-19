@@ -520,6 +520,7 @@ def fetch_wista_api_list():
 
 _WISTA_AUDIO_ONLY_ITAGS = {'139', '140', '141', '171', '172', '249', '250', '251'}
 _WISTA_MUXED_ITAGS = {'17', '18', '22', '37', '38', '82', '83', '84', '85'}
+_WISTA_HLS_ITAGS = {'91', '92', '93', '94', '95', '96', '300', '301'}
 _WISTA_SKIP_EXTS = {'mhtml'}
 
 
@@ -537,6 +538,24 @@ def _wista_convert_stream(s):
     # ストーリーボード（mhtml）はスキップ
     if ext in _WISTA_SKIP_EXTS:
         return None
+
+    # HLS判定: format_idが既知HLSのitagか、URLにhls_playlistを含む場合
+    is_hls = (format_id in _WISTA_HLS_ITAGS) or ('hls_playlist' in url)
+    if is_hls:
+        # qualityは数値（144, 240, 360...）の場合があるので "{q}p" に整形
+        q_str = str(quality) if quality else format_id
+        if q_str.isdigit():
+            q_str = f'{q_str}p'
+        label = f'{q_str} (HLS)'
+        return {
+            'url': url,
+            'quality': label,
+            'format': 'hls',
+            'container': 'm3u8',
+            'hasAudio': True,
+            'hasVideo': True,
+            'isHLS': True,
+        }
 
     # コーデック判定（映像のみ用）
     codec = 'VP9' if ext == 'webm' else 'H.264'
