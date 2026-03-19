@@ -524,7 +524,7 @@ _WISTA_HLS_ITAGS = {'91', '92', '93', '94', '95', '96', '300', '301'}
 _WISTA_SKIP_EXTS = {'mhtml'}
 
 
-def _wista_convert_stream(s):
+def _wista_convert_stream(s, duration_seconds=0):
     """wistaのストリームオブジェクトをフロントエンドが期待する形式に変換する"""
     url = s.get('url', '')
     if not url:
@@ -562,10 +562,14 @@ def _wista_convert_stream(s):
 
     # 種別判定してラベルを個別生成
     if format_id in _WISTA_AUDIO_ONLY_ITAGS or ext == 'm4a':
-        # 音声のみ: サイズ(bytes) → Kbpsへ変換（size/1024/100）
-        if size:
-            kbps = size / 1024 / 100
+        # 音声のみ: ビットレート(kbps) = 合計サイズ(KB) × 8 / 再生時間(秒)
+        if size and duration_seconds and duration_seconds > 0:
+            size_kb = size / 1024
+            kbps = (size_kb * 8) / duration_seconds
             label = f'{kbps:.2f}Kbps({ext.upper()})'
+        elif size:
+            size_kb = size / 1024
+            label = f'{size_kb:.0f}KB({ext.upper()})'
         else:
             label = f'{quality}({ext.upper()})' if quality else ext.upper()
         return {
@@ -603,7 +607,7 @@ def _wista_convert_stream(s):
         }
 
 
-def fetch_wista_stream(api_url, video_id):
+def fetch_wista_stream(api_url, video_id, duration_seconds=0):
     """Fetch stream data from a single wista API and return the streams list"""
     try:
         response = requests.get(
@@ -616,7 +620,7 @@ def fetch_wista_stream(api_url, video_id):
             raw_streams = data.get('streams', [])
             streams = []
             for s in raw_streams:
-                converted = _wista_convert_stream(s)
+                converted = _wista_convert_stream(s, duration_seconds)
                 if converted:
                     streams.append(converted)
             if streams:
@@ -1504,6 +1508,7 @@ def get_stream(video_id):
     """
     exclude_raw = request.args.get('exclude', '')
     exclude_set = set(e.strip().lower() for e in exclude_raw.split(',') if e.strip())
+    duration_seconds = request.args.get('duration_seconds', 0, type=int)
 
     result_streams = None
     used_source = None
@@ -1593,7 +1598,7 @@ def get_stream(video_id):
             wista_results = {}
             with ThreadPoolExecutor(max_workers=len(wista_api_list)) as executor:
                 futures = {
-                    executor.submit(fetch_wista_stream, api, video_id): api
+                    executor.submit(fetch_wista_stream, api, video_id, duration_seconds): api
                     for api in wista_api_list
                 }
                 for future in as_completed(futures):
@@ -1667,6 +1672,7 @@ def get_wista_stream(video_id):
     """wista APIを使ってytdlpストリームを取得する。
     複数のAPIを並列でリクエストし、最初に成功したレスポンスを返す。
     """
+    duration_seconds = request.args.get('duration_seconds', 0, type=int)
     api_list = fetch_wista_api_list()
     logger.info(f"[wista/{video_id}] API list: {len(api_list)} APIs")
 
@@ -1679,7 +1685,7 @@ def get_wista_stream(video_id):
 
     with ThreadPoolExecutor(max_workers=len(api_list)) as executor:
         futures = {
-            executor.submit(fetch_wista_stream, api, video_id): api
+            executor.submit(fetch_wista_stream, api, video_id, duration_seconds): api
             for api in api_list
         }
         for future in as_completed(futures):
@@ -1713,14 +1719,15 @@ def watch(video_id):
         'channel_name': None,
         'channel_id': None,
         'subscriber_count': None,
-        'channel_icon': None
+        'channel_icon': None,
+        'duration_seconds': 0,
     }
 
     for key in YOUTUBE_API_KEYS[:3]:
         try:
             url = (
                 f"https://www.googleapis.com/youtube/v3/"
-                f"videos?part=snippet,statistics&id={video_id}&key={key}"
+                f"videos?part=snippet,statistics,contentDetails&id={video_id}&key={key}"
             )
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
@@ -1732,6 +1739,8 @@ def watch(video_id):
                     metadata['published_at'] = (
                         item['snippet'].get('publishedAt', '').split('T')[0]
                     )
+                    iso_dur = item.get('contentDetails', {}).get('duration', '')
+                    metadata['duration_seconds'] = parse_duration_to_seconds(iso_dur)
 
                     view_count = int(
                         item['statistics'].get('viewCount', 0)
