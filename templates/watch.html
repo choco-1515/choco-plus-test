@@ -125,6 +125,7 @@
 
 <script>
     const videoId = '{{ video_id }}';
+    const VIDEO_DURATION_SECONDS = {{ duration_seconds or 0 }};
     const playerContainer = document.getElementById('playerContainer');
 
     function togglePlaybackInfo() {
@@ -664,7 +665,13 @@
         _showLogBtn('ytdlp');
 
         let url = '/api/stream/' + videoId;
-        if (excludeSource) url += '?exclude=' + encodeURIComponent(excludeSource);
+        const durationParam = VIDEO_DURATION_SECONDS > 0 ? 'duration_seconds=' + VIDEO_DURATION_SECONDS : '';
+        if (excludeSource) {
+            url += '?exclude=' + encodeURIComponent(excludeSource);
+            if (durationParam) url += '&' + durationParam;
+        } else if (durationParam) {
+            url += '?' + durationParam;
+        }
 
         const _excludeSet = excludeSource
             ? new Set(excludeSource.split(',').map(s => s.trim().toLowerCase()))
