@@ -484,6 +484,57 @@ _MIN2_TUBE_API_FALLBACK = [
 _min2_tube_api_list_cache = None
 _min2_tube_api_list_cache_time = 0
 
+WISTA_API_LIST_URL = "https://raw.githubusercontent.com/choco-1515/About-youtube/refs/heads/main/stream/wista-api.json"
+_wista_api_list_cache = None
+_wista_api_list_cache_time = 0
+
+
+def fetch_wista_api_list():
+    """Fetch list of wista API base URLs from GitHub JSON (cached 5 minutes)"""
+    import time
+    global _wista_api_list_cache, _wista_api_list_cache_time
+    now = time.time()
+    if _wista_api_list_cache and (now - _wista_api_list_cache_time) < 300:
+        return _wista_api_list_cache
+    try:
+        response = requests.get(WISTA_API_LIST_URL, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                urls = [item if isinstance(item, str) else item.get('url', '') for item in data]
+            elif isinstance(data, dict):
+                urls = data.get('apis', data.get('urls', []))
+            else:
+                urls = []
+            urls = [u.rstrip('/') for u in urls if u]
+            if urls:
+                _wista_api_list_cache = urls
+                _wista_api_list_cache_time = now
+                return urls
+    except Exception as e:
+        logger.warning(f"[wista] API list fetch failed: {e}")
+    result = _wista_api_list_cache or []
+    logger.info(f"[wista] Using {'cache' if _wista_api_list_cache else 'empty fallback'} ({len(result)} APIs)")
+    return result
+
+
+def fetch_wista_stream(api_url, video_id):
+    """Fetch stream data from a single wista API and return the streams list"""
+    try:
+        response = requests.get(
+            f"{api_url}/api/video/{video_id}",
+            timeout=15
+        )
+        logger.info(f"[wista] {api_url} → status={response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            streams = data.get('streams', [])
+            if streams:
+                return streams
+    except Exception as e:
+        logger.warning(f"[wista] {api_url} error: {e}")
+    return None
+
 
 def fetch_xerox_api_list():
     """Fetch list of xerox API base URLs from GitHub JSON (cached 5 minutes)"""
@@ -1429,7 +1480,45 @@ def get_stream(video_id):
     else:
         logger.info(f"[stream/{video_id}] siawase excluded")
 
-    # --- min2-tube API グループ（フォールバック）---
+    # --- wista API グループ（第4フォールバック）---
+    if 'wista' not in exclude_set:
+        wista_api_list = fetch_wista_api_list()
+        logger.info(f"[stream/{video_id}] wista API list: {len(wista_api_list)} APIs")
+        if wista_api_list:
+            wista_results = {}
+            with ThreadPoolExecutor(max_workers=len(wista_api_list)) as executor:
+                futures = {
+                    executor.submit(fetch_wista_stream, api, video_id): api
+                    for api in wista_api_list
+                }
+                for future in as_completed(futures):
+                    api_url = futures[future]
+                    try:
+                        streams = future.result()
+                        wista_results[api_url] = len(streams) if streams else 0
+                        if streams:
+                            result_streams = streams
+                            used_source = 'wista'
+                            for f in futures:
+                                f.cancel()
+                            break
+                    except Exception as e:
+                        wista_results[api_url] = f'ERR:{e}'
+                        continue
+            logger.info(f"[stream/{video_id}] wista results: {wista_results}")
+        else:
+            logger.warning(f"[stream/{video_id}] wista API list empty — skipping wista")
+    else:
+        logger.info(f"[stream/{video_id}] wista excluded")
+
+    if result_streams:
+        logger.info(f"[stream/{video_id}] SUCCESS via wista ({len(result_streams)} streams)")
+        return jsonify({'streams': result_streams, 'source': used_source, 'failed_sources': failed_sources})
+
+    if 'wista' not in exclude_set:
+        failed_sources.append('wista')
+
+    # --- min2-tube API グループ（第5フォールバック）---
     if 'min2tube' not in exclude_set:
         min2_api_list = fetch_min2_tube_api_list()
         logger.info(f"[stream/{video_id}] min2-tube API list: {len(min2_api_list)} APIs — starting fallback")
@@ -1467,6 +1556,47 @@ def get_stream(video_id):
         logger.warning(f"[stream/{video_id}] FAILED — all APIs returned nothing")
         return jsonify({'error': 'ストリームを取得できませんでした', 'failed_sources': failed_sources}), 503
 
+
+@app.route('/api/video/<video_id>')
+def get_wista_stream(video_id):
+    """wista APIを使ってytdlpストリームを取得する。
+    複数のAPIを並列でリクエストし、最初に成功したレスポンスを返す。
+    """
+    api_list = fetch_wista_api_list()
+    logger.info(f"[wista/{video_id}] API list: {len(api_list)} APIs")
+
+    if not api_list:
+        logger.warning(f"[wista/{video_id}] API list is empty")
+        return jsonify({'error': 'wista APIリストが空です'}), 503
+
+    result_streams = None
+    used_api = None
+
+    with ThreadPoolExecutor(max_workers=len(api_list)) as executor:
+        futures = {
+            executor.submit(fetch_wista_stream, api, video_id): api
+            for api in api_list
+        }
+        for future in as_completed(futures):
+            api_url = futures[future]
+            try:
+                streams = future.result()
+                if streams:
+                    result_streams = streams
+                    used_api = api_url
+                    for f in futures:
+                        f.cancel()
+                    break
+            except Exception as e:
+                logger.warning(f"[wista/{video_id}] {api_url} exception: {e}")
+                continue
+
+    if result_streams:
+        logger.info(f"[wista/{video_id}] SUCCESS via {used_api} ({len(result_streams)} streams)")
+        return jsonify({'streams': result_streams, 'source': used_api})
+    else:
+        logger.warning(f"[wista/{video_id}] FAILED — all wista APIs returned nothing")
+        return jsonify({'error': 'ストリームを取得できませんでした'}), 503
 
 
 @app.route('/watch/<video_id>')
