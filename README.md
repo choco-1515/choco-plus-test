@@ -1,5 +1,6 @@
-https://replit.com/@a0966a13/j-2#templates/watch.html a0966a2@hotmail.com 3/19最新コード　<br>
-https://replit.com/@a0966a11/j-2#static/style.css　@a0966a@hotmail.com 3/18最新コード
+https://replit.com/@a0966a14/j-2#main.py　a0966a3　3/20 wista<br>
+https://replit.com/@a0966a13/j-2#templates/watch.html a0966a2@hotmail.com 3/19最新コードyuzu　<br>
+https://replit.com/@a0966a11/j-2#static/style.css　@a0966a@hotmail.com 3/18最新コード sia
 
 #### コンソールでドの組み合わせが成功したか見れるらしい(inv)
 ***
