@@ -620,6 +620,20 @@ def fetch_wista_stream(api_url, video_id):
                 if converted:
                     streams.append(converted)
             if streams:
+                # HLSストリームは解像度の高い順（左から高画質）に並べ替え
+                def _hls_sort_key(st):
+                    if not st.get('isHLS'):
+                        return 0
+                    import re
+                    m = re.search(r'(\d+)', st.get('quality', ''))
+                    return int(m.group(1)) if m else 0
+                hls_streams = sorted(
+                    [st for st in streams if st.get('isHLS')],
+                    key=_hls_sort_key,
+                    reverse=True
+                )
+                other_streams = [st for st in streams if not st.get('isHLS')]
+                streams = hls_streams + other_streams
                 logger.info(f"[wista] {api_url} → {len(streams)} streams converted")
                 return streams
     except Exception as e:
