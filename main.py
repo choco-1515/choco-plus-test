@@ -538,18 +538,17 @@ def _wista_convert_stream(s):
     if ext in _WISTA_SKIP_EXTS:
         return None
 
-    # ラベル生成
-    label_parts = [quality] if quality else []
-    if ext:
-        label_parts.append(ext.upper())
-    if fps and fps > 1:
-        label_parts.append(f'{int(fps)}fps')
-    if size:
-        label_parts.append(f'{size // 1024}KB')
-    label = ' '.join(label_parts) if label_parts else format_id
+    # コーデック判定（映像のみ用）
+    codec = 'VP9' if ext == 'webm' else 'H.264'
 
-    # 種別判定
+    # 種別判定してラベルを個別生成
     if format_id in _WISTA_AUDIO_ONLY_ITAGS or ext == 'm4a':
+        # 音声のみ: サイズ(bytes) → Kbpsへ変換（size/1024/100）
+        if size:
+            kbps = size / 1024 / 100
+            label = f'{kbps:.2f}Kbps({ext.upper()})'
+        else:
+            label = f'{quality}({ext.upper()})' if quality else ext.upper()
         return {
             'url': url,
             'quality': label,
@@ -560,6 +559,8 @@ def _wista_convert_stream(s):
             'isHLS': False,
         }
     elif format_id in _WISTA_MUXED_ITAGS:
+        # MP4タブ（音声+映像）: 解像度のみ
+        label = quality if quality else format_id
         return {
             'url': url,
             'quality': label,
@@ -570,7 +571,8 @@ def _wista_convert_stream(s):
             'isHLS': False,
         }
     else:
-        # DASH映像（音声なし）
+        # 映像のみ: 解像度 (コーデック)
+        label = f'{quality} ({codec})' if quality else f'{codec}'
         return {
             'url': url,
             'quality': label,
