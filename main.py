@@ -518,6 +518,70 @@ def fetch_wista_api_list():
     return result
 
 
+_WISTA_AUDIO_ONLY_ITAGS = {'139', '140', '141', '171', '172', '249', '250', '251'}
+_WISTA_MUXED_ITAGS = {'17', '18', '22', '37', '38', '82', '83', '84', '85'}
+_WISTA_SKIP_EXTS = {'mhtml'}
+
+
+def _wista_convert_stream(s):
+    """wistaのストリームオブジェクトをフロントエンドが期待する形式に変換する"""
+    url = s.get('url', '')
+    if not url:
+        return None
+    ext = s.get('ext', '').lower()
+    quality = s.get('quality', '')
+    format_id = str(s.get('format_id', ''))
+    fps = s.get('fps')
+    size = s.get('size')
+
+    # ストーリーボード（mhtml）はスキップ
+    if ext in _WISTA_SKIP_EXTS:
+        return None
+
+    # ラベル生成
+    label_parts = [quality] if quality else []
+    if ext:
+        label_parts.append(ext.upper())
+    if fps and fps > 1:
+        label_parts.append(f'{int(fps)}fps')
+    if size:
+        label_parts.append(f'{size // 1024}KB')
+    label = ' '.join(label_parts) if label_parts else format_id
+
+    # 種別判定
+    if format_id in _WISTA_AUDIO_ONLY_ITAGS or ext == 'm4a':
+        return {
+            'url': url,
+            'quality': label,
+            'format': 'audio',
+            'container': ext or 'm4a',
+            'hasAudio': True,
+            'hasVideo': False,
+            'isHLS': False,
+        }
+    elif format_id in _WISTA_MUXED_ITAGS:
+        return {
+            'url': url,
+            'quality': label,
+            'format': 'mp4',
+            'container': ext or 'mp4',
+            'hasAudio': True,
+            'hasVideo': True,
+            'isHLS': False,
+        }
+    else:
+        # DASH映像（音声なし）
+        return {
+            'url': url,
+            'quality': label,
+            'format': 'video',
+            'container': ext or 'mp4',
+            'hasAudio': False,
+            'hasVideo': True,
+            'isHLS': False,
+        }
+
+
 def fetch_wista_stream(api_url, video_id):
     """Fetch stream data from a single wista API and return the streams list"""
     try:
@@ -528,8 +592,14 @@ def fetch_wista_stream(api_url, video_id):
         logger.info(f"[wista] {api_url} → status={response.status_code}")
         if response.status_code == 200:
             data = response.json()
-            streams = data.get('streams', [])
+            raw_streams = data.get('streams', [])
+            streams = []
+            for s in raw_streams:
+                converted = _wista_convert_stream(s)
+                if converted:
+                    streams.append(converted)
             if streams:
+                logger.info(f"[wista] {api_url} → {len(streams)} streams converted")
                 return streams
     except Exception as e:
         logger.warning(f"[wista] {api_url} error: {e}")
