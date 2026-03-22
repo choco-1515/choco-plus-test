@@ -1,5 +1,8 @@
 # Update-Log
 ***
+### 2026/03/22
+- **React**&**python** https://replit.com/@a0966a9-hot/j-2#
+- Defolt python https://replit.com/@a0966a14/j-2#main.py　a0966a3　3/20
 ### 2026/03/20 
 - ytdlpストリーム再生でのストリーム取得のapi追加(wista)
 - ストリーム取得について(xerox→yuzu→sia→***🔴wista***→min2-tube)
